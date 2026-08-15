@@ -1,0 +1,4 @@
+{% extends "base.html" %}{% block title %}ACCESS // NULL DIARY{% endblock %}{% block content %}
+<section class="login panel"><p class="eyebrow">SECURE NODE // AUTHENTICATION REQUIRED</p><h1>ENTER THE THOUGHTSPACE</h1>
+{% if throttled %}<div class="message error">TOO MANY ATTEMPTS — retry in 15 minutes.</div>{% endif %}<form method="post">{% csrf_token %}<label>IDENTITY<input name="username" value="{{ username }}" autocomplete="username" required autofocus></label><label>PASSPHRASE<input name="password" type="password" autocomplete="current-password" required></label><label>AUTHENTICATOR OR RECOVERY CODE <small>(required for therapist/admin)</small><input name="totp" autocomplete="one-time-code"></label><button class="primary">AUTHENTICATE →</button></form></section>{% endblock %}
+

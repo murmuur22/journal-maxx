@@ -1,0 +1,2 @@
+{% extends "base.html" %}{% block content %}<div class="hero"><p class="eyebrow">PATIENT ARCHIVE</p><h1>YOUR CARDS</h1></div><div class="card-list">{% for card in cards %}<a class="card-row" href="{% if card.status == 'submitted' %}{% url 'journal:detail' card.id %}{% else %}{% url 'journal:today' %}{% endif %}"><time>{{ card.local_date }}</time><span>{{ card.get_status_display }}</span><b>{{ card.addenda.count }} ADDENDA</b></a>{% empty %}<div class="panel">No signals recorded yet.</div>{% endfor %}</div>{% endblock %}
+

@@ -1,0 +1,2 @@
+{% extends "base.html" %}{% block content %}<section class="login panel"><p class="eyebrow">IDENTITY ACTIVATED</p><h1>STORE RECOVERY CODES</h1><p>Each code works once. Save them in a password manager now; they will not be shown again.</p><ul class="codes">{% for code in codes %}<li><code>{{ code }}</code></li>{% endfor %}</ul><a class="button" href="{% url 'login' %}">CONTINUE TO SIGN IN →</a></section>{% endblock %}
+

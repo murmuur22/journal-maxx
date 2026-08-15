@@ -1,0 +1,11 @@
+{% load static %}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}NULL//DIARY{% endblock %}</title><link rel="stylesheet" href="{% static 'app.css' %}">{% block head %}{% endblock %}</head>
+<body><div class="scanlines" aria-hidden="true"></div>
+<header><a class="brand" href="/">NULL//DIARY</a>{% if user.is_authenticated %}<nav>
+{% if user.role == 'patient' %}<a href="/journal/">TODAY</a><a href="/journal/history/">ARCHIVE</a><a href="/journal/trends/">SIGNALS</a>{% endif %}
+{% if user.role == 'reviewer' %}<a href="/review/">CARDS</a><a href="/review/trends/">SIGNALS</a>{% endif %}
+{% if user.role == 'admin' %}<a href="/control/">CONTROL</a>{% endif %}
+<form action="/logout/" method="post">{% csrf_token %}<button class="link">DISCONNECT</button></form></nav>{% endif %}</header>
+<main>{% for message in messages %}<div class="message {{ message.tags }}">{{ message }}</div>{% endfor %}{% block content %}{% endblock %}</main>
+<footer>ENCRYPTED THOUGHTSPACE // NOT AN EMERGENCY OR CONTINUOUSLY MONITORED SERVICE</footer>{% block scripts %}{% endblock %}</body></html>

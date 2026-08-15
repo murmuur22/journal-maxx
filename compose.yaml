@@ -1,0 +1,19 @@
+services:
+  diary:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:8800:8000"
+    volumes:
+      - diary-state:/var/lib/diary-state
+      - type: bind
+        source: ${DIARY_HOST_CARD_PATH:?Set DIARY_HOST_CARD_PATH to the mounted encrypted NAS directory}
+        target: /data/cards
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  diary-state:
+

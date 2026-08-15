@@ -1,0 +1,9 @@
+.git
+.env
+.state
+.cards
+.deps
+.venv
+__pycache__
+*.pyc
+

@@ -1,0 +1,9 @@
+.env
+.state/
+.cards/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.deps/
+staticfiles/

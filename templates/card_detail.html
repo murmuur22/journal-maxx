@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block content %}<div class="hero"><p class="eyebrow">LOCKED RECORD // {{ card.id }}</p><h1>{{ card.local_date }}</h1></div>
+<div class="layout"><article class="panel markdown">{{ rendered|safe }}
+{% if card.attachments.exists %}<h2>Attachments</h2><ul>{% for file in card.attachments.all %}<li><a href="{% if user.role == 'patient' %}{% url 'journal:attachment' card.id file.id %}{% else %}{% url 'review:attachment' card.id file.id %}{% endif %}">{{ file.original_name }}</a> <small>{{ file.size }} bytes</small></li>{% endfor %}</ul>{% endif %}
+{% for item in card.addenda.all %}<div class="addendum"><p class="eyebrow">ADDENDUM // {{ item.created_at }}</p>{{ item.body|linebreaks }}</div>{% endfor %}</article>
+<aside>{% if user.role == 'patient' %}<form class="panel" method="post" action="{% url 'journal:addendum' card.id %}">{% csrf_token %}<h2>Append, never overwrite</h2>{{ addendum_form.as_p }}<button class="primary">ADD ADDENDUM</button></form>{% else %}<form class="panel" method="post" action="{% url 'review:metadata' card.id %}">{% csrf_token %}<h2>Private organization</h2>{{ reviewer_form.as_p }}<button class="primary">SAVE PRIVATE DATA</button></form>{% endif %}</aside></div>{% endblock %}
+
