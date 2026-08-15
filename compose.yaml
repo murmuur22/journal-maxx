@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "127.0.0.1:8800:8000"
+      - "${DIARY_BIND_ADDRESS:-127.0.0.1}:8800:8000"
     volumes:
       - diary-state:/var/lib/diary-state
       - type: bind
@@ -16,4 +16,3 @@ services:
       - ALL
 volumes:
   diary-state:
-
