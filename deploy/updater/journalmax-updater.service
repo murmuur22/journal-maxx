@@ -12,6 +12,8 @@ Group=root
 UMask=0077
 StateDirectory=journalmax/updater
 StateDirectoryMode=0700
+EnvironmentFile=-/etc/journalmax/updater.env
+Environment=XDG_CACHE_HOME=/var/lib/journalmax/updater/cache
 ExecStart=/usr/bin/python3 /opt/journalmax/updater/journalmax_updater.py --config /etc/journalmax/updater.json
 Restart=on-failure
 RestartSec=5

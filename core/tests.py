@@ -46,13 +46,21 @@ class DiaryTests(TestCase):
     def test_readiness_reports_release_database_and_card_volume(self):
         response = self.client.get(reverse("readiness"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["version"], "0.2.0")
+        self.assertEqual(response.json()["version"], "0.2.1")
         self.assertEqual(response.json()["database"], "ok")
         self.assertEqual(response.json()["card_storage"], "local")
         with override_settings(CARD_VOLUME_REQUIRE_MARKER=True):
             unavailable = self.client.get(reverse("readiness"))
             self.assertEqual(unavailable.status_code, 503)
             self.assertEqual(unavailable.json()["status"], "unavailable")
+
+    def test_production_middleware_serves_collected_static_files(self):
+        with tempfile.TemporaryDirectory() as static_directory, override_settings(DEBUG=False, STATIC_ROOT=Path(static_directory)):
+            call_command("collectstatic", interactive=False, verbosity=0)
+            production_client = Client()
+            response = production_client.get("/static/app.css")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response["Cache-Control"], "max-age=60, public")
 
     def test_stale_login_form_recovers_instead_of_showing_forbidden(self):
         client = Client(enforce_csrf_checks=True)
