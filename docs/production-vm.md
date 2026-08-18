@@ -141,14 +141,25 @@ Create the first administrator once:
 
 ```bash
 sudo docker compose --env-file .env.production -f compose.production.yaml exec diary \
-  python manage.py bootstrap_diary --username operator
+  python manage.py bootstrap_diary
 ```
 
-Store the printed passphrase, authenticator key, and recovery codes securely. Put an HTTPS reverse proxy in front of `127.0.0.1:8800` before allowing real users to sign in.
+This creates the `admin` identity with a generated temporary passphrase and no authenticator requirement. Store the printed passphrase, sign in, open **Accounts**, choose **Change my passphrase**, and replace it before creating any other accounts. Authenticator protection is optional and can be enrolled later from the same account editor. Add `--enable-totp` to bootstrap with it immediately.
+
+Put an HTTPS reverse proxy in front of the service before allowing real users to sign in.
 
 ## 6. Update from the control plane
 
-Sign in as an administrator and open **Updates**. **Check for updates** reads the latest stable GitHub Release. If a newer semantic version exists, review its notes and choose **Install update**. A fresh authenticator or recovery code is required to authorize the operation.
+Sign in as an administrator and open **Updates**. **Check for updates** reads the latest stable GitHub Release. If a newer semantic version exists, review its notes and choose **Install update**. The operation requires a fresh authenticator/recovery code when MFA is enrolled, or the administrator’s current passphrase otherwise.
+
+To recover a locked password-only administrator from the host console:
+
+```bash
+sudo docker compose --env-file .env.production -f compose.production.yaml exec diary \
+  python manage.py recover_account --username admin --disable-mfa --clear-throttle
+sudo docker compose --env-file .env.production -f compose.production.yaml exec diary \
+  python manage.py changepassword admin
+```
 
 The host service then:
 

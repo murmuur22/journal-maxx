@@ -2,7 +2,7 @@ import hashlib
 import json
 import secrets
 import tempfile
-from datetime import date
+from datetime import date, timedelta
 from io import StringIO
 from pathlib import Path
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -11,7 +11,7 @@ from django.core.management import call_command
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
-from .models import ApiToken, AuditEvent, Card, CareRelationship, Emotion, FormDefinition, ReviewerMetadata, TherapistComment, User
+from .models import ApiToken, AuditEvent, Card, CareRelationship, Emotion, FormDefinition, Invite, ReviewerMetadata, TherapistComment, User
 from .security import decrypt_secret, encrypt_secret, generate_totp_secret, totp, verify_totp
 from .services import add_addendum, card_directory, card_file_inventory, comments_filename, quarantine_card, restore_card, storage_status, submit_card, verify_card_integrity
 
@@ -46,7 +46,7 @@ class DiaryTests(TestCase):
     def test_readiness_reports_release_database_and_card_volume(self):
         response = self.client.get(reverse("readiness"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["version"], "0.2.1")
+        self.assertEqual(response.json()["version"], "0.2.2")
         self.assertEqual(response.json()["database"], "ok")
         self.assertEqual(response.json()["card_storage"], "local")
         with override_settings(CARD_VOLUME_REQUIRE_MARKER=True):
@@ -76,10 +76,36 @@ class DiaryTests(TestCase):
         self.assertEqual(response.url, "/")
 
     @override_settings(DEBUG=False, DEV_PASSWORD_ONLY_USERS=set())
-    def test_real_reviewer_still_requires_second_factor(self):
+    def test_reviewer_without_enrolled_authenticator_uses_password_only(self):
         response = self.client.post("/login/", {"username": "reviewer", "password": "a-long-test-password"})
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "valid authenticator code")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/")
+
+    @override_settings(DEBUG=False, DEV_PASSWORD_ONLY_USERS=set())
+    def test_reviewer_with_enrolled_authenticator_requires_valid_code(self):
+        secret = generate_totp_secret()
+        self.reviewer.totp_confirmed = True
+        self.reviewer.totp_secret_encrypted = encrypt_secret(secret)
+        self.reviewer.save(update_fields=["totp_confirmed", "totp_secret_encrypted"])
+        denied = self.client.post("/login/", {"username": "reviewer", "password": "a-long-test-password"})
+        self.assertEqual(denied.status_code, 200)
+        self.assertContains(denied, "valid authenticator code")
+        accepted = self.client.post("/login/", {"username": "reviewer", "password": "a-long-test-password", "totp": totp(secret)})
+        self.assertEqual(accepted.status_code, 302)
+
+    def test_reviewer_invite_can_activate_without_authenticator(self):
+        token = "optional-authenticator-invite"
+        Invite.objects.create(
+            token_hash=hashlib.sha256(token.encode()).hexdigest(),
+            role=User.Role.REVIEWER,
+            username="new-therapist",
+            expires_at=timezone.now() + timedelta(hours=1),
+        )
+        response = self.client.post(reverse("accept_invite", args=[token]), {"password": "a-new-long-passphrase"})
+        self.assertRedirects(response, reverse("login"))
+        account = User.objects.get(username="new-therapist")
+        self.assertFalse(account.totp_confirmed)
+        self.assertEqual(account.totp_secret_encrypted, "")
 
     def test_submission_creates_readable_markdown_and_locks_card(self):
         card = self.submitted(); card.refresh_from_db()
@@ -390,6 +416,54 @@ class DiaryTests(TestCase):
         self.assertContains(response, "GENERATE NEW KEY")
         self.assertNotContains(response, secret)
         self.assertContains(response, "account-sort")
+
+    def test_admin_can_change_own_password_without_ending_session(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse("control:account", args=[self.admin.id]), {
+            "username": self.admin.username,
+            "new_password": "my-new-administrator-passphrase",
+            "confirm_password": "my-new-administrator-passphrase",
+        })
+        self.assertRedirects(response, reverse("control:dashboard"))
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.check_password("my-new-administrator-passphrase"))
+        self.assertEqual(self.client.get(reverse("control:dashboard")).status_code, 200)
+
+    def test_admin_can_disable_an_enrolled_authenticator(self):
+        secret = generate_totp_secret()
+        self.admin.totp_confirmed = True
+        self.admin.totp_secret_encrypted = encrypt_secret(secret)
+        self.admin.save(update_fields=["totp_confirmed", "totp_secret_encrypted"])
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse("control:account", args=[self.admin.id]), {
+            "username": self.admin.username,
+            "disable_totp": "1",
+        })
+        self.assertRedirects(response, reverse("control:dashboard"))
+        self.admin.refresh_from_db()
+        self.assertFalse(self.admin.totp_confirmed)
+        self.assertEqual(self.admin.totp_secret_encrypted, "")
+
+    def test_bootstrap_defaults_to_admin_with_temporary_password_and_no_mfa(self):
+        User.objects.all().delete()
+        output = StringIO()
+        call_command("bootstrap_diary", password="temporary-install-passphrase", stdout=output)
+        account = User.objects.get(username="admin")
+        self.assertTrue(account.check_password("temporary-install-passphrase"))
+        self.assertFalse(account.totp_confirmed)
+        self.assertIn("FIRST STEP", output.getvalue())
+
+    def test_recovery_command_disables_mfa_and_clears_recovery_codes(self):
+        secret = generate_totp_secret()
+        self.admin.totp_confirmed = True
+        self.admin.totp_secret_encrypted = encrypt_secret(secret)
+        self.admin.save(update_fields=["totp_confirmed", "totp_secret_encrypted"])
+        from .security import issue_recovery_codes
+        issue_recovery_codes(self.admin)
+        call_command("recover_account", username=self.admin.username, disable_mfa=True, clear_throttle=True)
+        self.admin.refresh_from_db()
+        self.assertFalse(self.admin.totp_confirmed)
+        self.assertFalse(self.admin.recovery_codes.exists())
 
     def test_reviewer_metadata_is_private(self):
         card = self.submitted(); other = User.objects.create_user(username="other", password="a-long-test-password", role=User.Role.REVIEWER)

@@ -37,17 +37,14 @@ class UpdaterControlTests(TestCase):
         self.client.force_login(self.patient)
         self.assertEqual(self.client.get(reverse("control:update_status")).status_code, 403)
 
-    @patch("core.views.verify_second_factor")
     @patch("core.views.updater_request")
-    def test_apply_requires_fresh_second_factor_and_is_audited(self, request, verify):
+    def test_apply_requires_current_password_when_mfa_is_not_enrolled(self, request):
         self.client.force_login(self.admin)
-        verify.return_value = False
         denied = self.client.post(reverse("control:update_apply"), {"version": "0.3.0", "code": "bad"})
         self.assertEqual(denied.status_code, 403)
         request.assert_not_called()
-        verify.return_value = True
         request.return_value = {"accepted": True, "target_version": "0.3.0"}
-        accepted = self.client.post(reverse("control:update_apply"), {"version": "0.3.0", "code": "123456"})
+        accepted = self.client.post(reverse("control:update_apply"), {"version": "0.3.0", "code": "a-long-test-password"})
         self.assertEqual(accepted.status_code, 200)
         request.assert_called_once_with("apply", version="0.3.0")
         self.assertTrue(AuditEvent.objects.filter(action="system.update_requested", target_id="0.3.0").exists())
