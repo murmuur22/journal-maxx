@@ -17,6 +17,11 @@ services:
         target: /data/cards
         bind:
           create_host_path: false
+      - type: bind
+        source: ${JOURNALMAX_UPDATER_RUNTIME_DIR:-/run/journalmax-updater}
+        target: /run/journalmax-updater
+        bind:
+          create_host_path: false
     security_opt:
       - no-new-privileges:true
     cap_drop:

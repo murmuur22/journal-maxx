@@ -290,6 +290,93 @@
     }
   });
 
+  const updateWorkspace = document.querySelector("[data-update-workspace]");
+  if (updateWorkspace) {
+    const connection = updateWorkspace.querySelector("[data-update-connection]");
+    const installed = updateWorkspace.querySelector("[data-update-installed]");
+    const latest = updateWorkspace.querySelector("[data-update-latest]");
+    const availability = updateWorkspace.querySelector("[data-update-availability]");
+    const phase = updateWorkspace.querySelector("[data-update-phase]");
+    const message = updateWorkspace.querySelector("[data-update-message]");
+    const updatedAt = updateWorkspace.querySelector("[data-update-time]");
+    const checkButton = updateWorkspace.querySelector("[data-update-check]");
+    const installButton = updateWorkspace.querySelector("[data-update-open]");
+    const releaseLink = updateWorkspace.querySelector("[data-update-release-link]");
+    const confirmModal = document.getElementById("update-confirm");
+    const applyForm = confirmModal?.querySelector("[data-update-apply-form]");
+    let latestRelease = null;
+    let requestRunning = false;
+
+    const csrf = () => updateWorkspace.querySelector('[name="csrfmiddlewaretoken"]')?.value || "";
+    const activePhases = new Set(["queued", "downloading", "backing_up", "starting"]);
+    const newerThan = (candidate, current) => {
+      const left = candidate.split(".").map(Number); const right = current.split(".").map(Number);
+      return left.some((part, index) => part !== right[index] && part > right[index] && left.slice(0, index).every((value, prior) => value === right[prior]));
+    };
+    const renderUpdate = (payload) => {
+      const connected = payload.connected === true;
+      updateWorkspace.classList.toggle("is-connected", connected);
+      updateWorkspace.classList.toggle("is-offline", !connected);
+      connection.textContent = connected ? "HOST UPDATER CONNECTED" : "UPDATER NOT CONNECTED";
+      checkButton.disabled = !connected || requestRunning || activePhases.has(payload.job?.phase);
+      if (payload.installed_version) installed.textContent = `v${payload.installed_version}`;
+      if (payload.latest) latestRelease = payload.latest;
+      if (latestRelease) {
+        latest.textContent = `v${latestRelease.version}`;
+        const currentVersion = payload.installed_version || installed.textContent.replace(/^v/, "");
+        const available = typeof payload.update_available === "boolean" ? payload.update_available : newerThan(latestRelease.version, currentVersion);
+        availability.textContent = available ? "NEW RELEASE AVAILABLE" : "CURRENT RELEASE";
+        installButton.disabled = !connected || !available || activePhases.has(payload.job?.phase);
+        installButton.dataset.version = latestRelease.version;
+      } else {
+        installButton.disabled = true;
+      }
+      if (payload.release_url) releaseLink.href = payload.release_url;
+      phase.textContent = (payload.job?.phase || (connected ? "idle" : "offline")).replaceAll("_", " ").toUpperCase();
+      message.textContent = payload.job?.message || payload.error || "Updater status unavailable.";
+      updatedAt.textContent = payload.job?.updated_at ? new Date(payload.job.updated_at).toLocaleString() : "";
+    };
+    const updaterFetch = async (url, options = {}) => {
+      const response = await fetch(url, { cache: "no-store", credentials: "same-origin", headers: { Accept: "application/json", ...options.headers }, ...options });
+      let payload;
+      try { payload = await response.json(); } catch (_) { payload = { connected: false, error: "The updater response could not be read." }; }
+      if (!response.ok && response.status !== 503) throw new Error(payload.error || `Update request failed (${response.status})`);
+      return payload;
+    };
+    const refreshUpdate = async () => {
+      if (requestRunning || document.hidden) return;
+      try { renderUpdate(await updaterFetch(updateWorkspace.dataset.statusUrl)); }
+      catch (error) { renderUpdate({ connected: false, error: error.message }); }
+    };
+    checkButton.addEventListener("click", async () => {
+      requestRunning = true; checkButton.disabled = true; message.textContent = "CONTACTING THE STABLE RELEASE CHANNEL…";
+      try {
+        const body = new FormData(); body.set("csrfmiddlewaretoken", csrf());
+        renderUpdate(await updaterFetch(updateWorkspace.dataset.checkUrl, { method: "POST", body }));
+      } catch (error) { renderUpdate({ connected: false, error: error.message }); }
+      finally { requestRunning = false; }
+    });
+    installButton.addEventListener("click", () => {
+      const version = installButton.dataset.version;
+      confirmModal.querySelector("[data-update-modal-version]").textContent = `JOURNALMAX v${version}`;
+      confirmModal.querySelector("[data-update-version]").value = version;
+      confirmModal.querySelector("[data-update-feedback]").textContent = "";
+      confirmModal.showModal();
+    });
+    applyForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitter = event.submitter;
+      const feedback = applyForm.querySelector("[data-update-feedback]");
+      submitter.disabled = true; feedback.textContent = "AUTHORIZING RELEASE…";
+      try {
+        const payload = await updaterFetch(updateWorkspace.dataset.applyUrl, { method: "POST", body: new FormData(applyForm) });
+        renderUpdate(payload); confirmModal.close(); applyForm.reset();
+      } catch (error) { feedback.textContent = error.message; }
+      finally { submitter.disabled = false; }
+    });
+    setInterval(refreshUpdate, 4000);
+  }
+
   try {
     const savedPosition = sessionStorage.getItem(scrollKey);
     if (savedPosition !== null) {

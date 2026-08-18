@@ -1,0 +1,27 @@
+[Unit]
+Description=JOURNALMAX host update broker
+Documentation=https://github.com/murmuur22/journal-maxx
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+UMask=0077
+StateDirectory=journalmax/updater
+StateDirectoryMode=0700
+ExecStart=/usr/bin/python3 /opt/journalmax/updater/journalmax_updater.py --config /etc/journalmax/updater.json
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target
