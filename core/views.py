@@ -29,7 +29,7 @@ from .context_processors import get_reviewer_patient
 from .forms import AddendumForm, ReviewerStatusForm, TherapistCommentForm
 from .models import AuditEvent, Card, CareRelationship, Emotion, FormDefinition, Invite, ReviewerMetadata, User
 from .services import add_addendum, add_therapist_comment, audit, card_directory, card_file_inventory, comments_filename, purge_card, quarantine_card, restore_card, storage_status, submit_card, verify_card_integrity
-from .security import encrypt_secret, generate_totp_secret, issue_recovery_codes, verify_second_factor, verify_totp
+from .security import encrypt_secret, generate_totp_secret, issue_recovery_codes, verify_privileged_credential, verify_second_factor, verify_totp
 from .updater import UpdaterUnavailable, updater_request
 
 def liveness(request): return JsonResponse({"status": "ok"})
@@ -72,8 +72,8 @@ def login_view(request):
         if attempts >= 5: return render(request, "login.html", {**login_context, "username": request.POST.get("username", ""), "throttled": True}, status=429)
         user = authenticate(request, username=request.POST.get("username", ""), password=request.POST.get("password", ""))
         if user and user.is_active:
-            if user.role in (User.Role.REVIEWER, User.Role.ADMIN) and user.username not in settings.DEV_PASSWORD_ONLY_USERS:
-                if not user.totp_confirmed or not verify_second_factor(user, request.POST.get("totp", "")):
+            if user.role in (User.Role.REVIEWER, User.Role.ADMIN) and user.totp_confirmed and user.username not in settings.DEV_PASSWORD_ONLY_USERS:
+                if not verify_second_factor(user, request.POST.get("totp", "")):
                     cache.set(throttle_key, attempts + 1, 900)
                     messages.error(request, "A valid authenticator code is required."); return render(request, "login.html", {**login_context, "username": request.POST.get("username", "")})
             cache.delete(throttle_key); login(request, user); audit(user, "auth.login", request=request); return redirect("home")
@@ -90,13 +90,17 @@ def accept_invite(request, token):
     if request.method == "POST":
         password = request.POST.get("password", "")
         if len(password) < 12: messages.error(request, "Passphrase must be at least 12 characters.")
-        elif invite.role in (User.Role.REVIEWER, User.Role.ADMIN) and not verify_totp(secret, request.POST.get("totp")):
+        elif request.POST.get("totp", "").strip() and invite.role in (User.Role.REVIEWER, User.Role.ADMIN) and not verify_totp(secret, request.POST.get("totp")):
             messages.error(request, "Authenticator code did not verify.")
         else:
-            user = User.objects.create_user(username=invite.username, password=password, role=invite.role, totp_confirmed=invite.role in (User.Role.REVIEWER, User.Role.ADMIN), totp_secret_encrypted=encrypt_secret(secret) if invite.role in (User.Role.REVIEWER, User.Role.ADMIN) else "")
+            totp_enabled = invite.role in (User.Role.REVIEWER, User.Role.ADMIN) and bool(request.POST.get("totp", "").strip())
+            user = User.objects.create_user(username=invite.username, password=password, role=invite.role, totp_confirmed=totp_enabled, totp_secret_encrypted=encrypt_secret(secret) if totp_enabled else "")
             invite.used_at = timezone.now(); invite.save(update_fields=["used_at"]); request.session.pop(secret_key, None)
-            codes = issue_recovery_codes(user) if user.role in (User.Role.REVIEWER, User.Role.ADMIN) else []
-            audit(user, "invite.accepted"); return render(request, "recovery_codes.html", {"codes": codes})
+            codes = issue_recovery_codes(user) if totp_enabled else []
+            audit(user, "invite.accepted");
+            if codes: return render(request, "recovery_codes.html", {"codes": codes})
+            messages.success(request, "Account activated. You can enroll an authenticator later.")
+            return redirect("login")
     return render(request, "accept_invite.html", {"invite": invite, "totp_secret": secret})
 
 @require_POST
@@ -495,8 +499,9 @@ def control_update_check(request):
 @role_required(User.Role.ADMIN)
 @require_POST
 def control_update_apply(request):
-    if not verify_second_factor(request.user, request.POST.get("code", "")):
-        return JsonResponse({"connected": True, "error": "A fresh authenticator or recovery code is required."}, status=403)
+    if not verify_privileged_credential(request.user, request.POST.get("code", "")):
+        requirement = "authenticator or recovery code" if request.user.totp_confirmed else "current passphrase"
+        return JsonResponse({"connected": True, "error": f"A valid {requirement} is required."}, status=403)
     version = request.POST.get("version", "").strip()
     response = _updater_json("apply", version=version)
     if response.status_code == 200:
@@ -558,6 +563,9 @@ def control_account(request, user_id):
     new_totp_secret = request.POST.get("new_totp_secret", "").replace(" ", "").upper()
     new_totp_code = request.POST.get("new_totp_code", "").strip()
     rotate_totp = bool(new_totp_secret or new_totp_code)
+    disable_totp = request.POST.get("disable_totp") == "1"
+    if rotate_totp and disable_totp:
+        messages.error(request, "Choose either authenticator enrollment or removal, not both."); return redirect("control:dashboard")
     if rotate_totp:
         if account.role not in (User.Role.REVIEWER, User.Role.ADMIN):
             messages.error(request, "Patient accounts do not use an authenticator code."); return redirect("control:dashboard")
@@ -584,6 +592,9 @@ def control_account(request, user_id):
         if rotate_totp:
             account.totp_secret_encrypted = encrypt_secret(new_totp_secret); account.totp_confirmed = True
             update_fields.extend(["totp_secret_encrypted", "totp_confirmed"])
+        elif disable_totp and account.role in (User.Role.REVIEWER, User.Role.ADMIN):
+            account.totp_secret_encrypted = ""; account.totp_confirmed = False
+            update_fields.extend(["totp_secret_encrypted", "totp_confirmed"])
         account.save(update_fields=update_fields)
         if account.role == User.Role.REVIEWER:
             CareRelationship.objects.filter(therapist=account).exclude(patient_id__in=selected_patient_ids).delete()
@@ -592,7 +603,9 @@ def control_account(request, user_id):
         recovery_codes = []
         if rotate_totp:
             account.recovery_codes.all().delete(); recovery_codes = issue_recovery_codes(account)
-    audit(request.user, "account.updated", account.id, {"role": account.role, "is_active": account.is_active, "patient_ids": sorted(selected_patient_ids) if account.role == User.Role.REVIEWER else None, "password_replaced": bool(new_password), "authenticator_rotated": rotate_totp}, request)
+        elif disable_totp:
+            account.recovery_codes.all().delete()
+    audit(request.user, "account.updated", account.id, {"role": account.role, "is_active": account.is_active, "patient_ids": sorted(selected_patient_ids) if account.role == User.Role.REVIEWER else None, "password_replaced": bool(new_password), "authenticator_rotated": rotate_totp, "authenticator_disabled": disable_totp}, request)
     if new_password and account.id == request.user.id: update_session_auth_hash(request, account)
     if recovery_codes: messages.success(request, f"Account updated. New one-time recovery codes for {account.username}: " + "  ".join(recovery_codes))
     else: messages.success(request, "Account settings updated.")

@@ -41,3 +41,9 @@ def verify_second_factor(user, code):
     if recovery:
         recovery.used_at = timezone.now(); recovery.save(update_fields=["used_at"]); return True
     return False
+
+def verify_privileged_credential(user, credential):
+    """Re-authenticate a privileged action with MFA when enrolled, else password."""
+    if user.totp_confirmed:
+        return verify_second_factor(user, credential)
+    return user.check_password(str(credential or ""))

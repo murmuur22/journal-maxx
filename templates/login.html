@@ -7,7 +7,7 @@
   <form method="post">{% csrf_token %}
     <label>IDENTITY<input name="username" value="{{ username }}" autocomplete="username" required autofocus></label>
     <label>PASSPHRASE<input name="password" type="password" autocomplete="current-password" required></label>
-    <label>CODE<input name="totp" autocomplete="one-time-code"></label>
+    <label>CODE <small>(only if enrolled)</small><input name="totp" autocomplete="one-time-code"></label>
     <button class="primary">ENTER →</button>
   </form>
 </section>

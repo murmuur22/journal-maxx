@@ -500,6 +500,11 @@ footer { background: #000; border-top: 4px solid #fff; color: #777; letter-spaci
 .care-readonly li b { color: #777; font-size: .55rem; }
 .care-empty { padding: .8rem; color: #666; font-size: .58rem; letter-spacing: .07em; }
 .credential-editor { margin: 1.5rem 0 0; padding-top: 1.25rem; border-top: 2px solid #555; }
+.current-account-callout { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0 0 1rem; padding: .9rem 1rem; border: 1px solid #d8cb79; background: #050505; box-shadow: inset 4px 0 0 #d8cb79; }
+.current-account-callout > div { display: grid; gap: .2rem; }
+.current-account-callout span, .current-account-callout small { color: #8a8a82; font-size: .55rem; letter-spacing: .07em; }
+.current-account-callout b { color: #fff; font-size: .8rem; }
+.current-account-callout button { flex: 0 0 auto; color: #000; background: #d8cb79; box-shadow: none; }
 .credential-editor > h3 { margin: 0 0 .35rem; font: 900 .72rem Arial, sans-serif; letter-spacing: .08em; }
 .credential-editor > p { margin: 0 0 1rem; color: #777; font-size: .62rem; }
 .credential-status { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid #555; }
@@ -512,6 +517,7 @@ footer { background: #000; border-top: 4px solid #fff; color: #777; letter-spaci
 .authenticator-rotate > div b { font-size: .65rem; }
 .authenticator-rotate > div small { color: #777; font-size: .58rem; line-height: 1.5; }
 .authenticator-rotate > button { margin-top: .8rem; padding: .55rem .7rem; box-shadow: none; }
+.authenticator-rotate > .authenticator-disable { margin-left: .5rem; }
 .authenticator-rotate input[readonly] { color: #d8cb79; font-size: .78rem; letter-spacing: .08em; }
 .modal-note { padding: .8rem; border-left: 3px solid #777; background: #0a0a0a; color: #777 !important; font-size: .62rem; }
 .account-registry { overflow-x: auto; }
