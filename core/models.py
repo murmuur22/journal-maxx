@@ -127,3 +127,21 @@ class AuditEvent(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     class Meta: ordering = ["-created_at"]
+
+class FeedbackReport(models.Model):
+    class Kind(models.TextChoices):
+        FEEDBACK = "feedback", "Feedback"
+        BUG = "bug", "Bug report"
+    author = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name="feedback_reports")
+    author_name = models.CharField(max_length=150)
+    author_role = models.CharField(max_length=16, choices=User.Role.choices)
+    kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.FEEDBACK)
+    subject = models.CharField(max_length=140, blank=True)
+    body = models.TextField(max_length=4000)
+    page = models.CharField(max_length=500, blank=True)
+    important = models.BooleanField(default=False)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="archived_feedback_reports")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    class Meta: ordering = ["-important", "-created_at"]

@@ -77,6 +77,10 @@ body > header {
 .brand-id { color: #aaa; font: 700 .62rem ui-monospace, monospace; letter-spacing: .055em; margin-left: .7rem; text-shadow: 0 0 6px #fff5; transform: skew(8deg); white-space: nowrap; }
 nav a, .link { color: #aaa; letter-spacing: .08em; }
 nav a:hover, .link:hover { color: #fff; text-shadow: 0 0 8px #fff; }
+.nav-updates { position: relative; }
+.update-nav-dot { display: none; position: absolute; top: -7px; right: -8px; width: 8px; height: 8px; border: 1px solid #fff; border-radius: 50%; background: #fff; box-shadow: 0 0 5px #fff, 0 0 13px #fff, 0 0 22px #fff; }
+.nav-updates.has-update .update-nav-dot { display: block; animation: update-pulse 1.8s ease-in-out infinite; }
+@keyframes update-pulse { 50% { opacity: .55; transform: scale(.78); } }
 main { width: min(1240px, calc(100% - 2rem)); padding-top: 2.25rem; }
 
 .hero, .signals-hero, .review-hero { border-top: 1px solid #555; padding-top: 1rem; }
@@ -496,7 +500,117 @@ footer { background: #000; border-top: 4px solid #fff; color: #777; letter-spaci
   color: #fff;
   font: 400 1.25rem/1 system-ui, sans-serif;
 }
-.disconnect-form .disconnect-button .nav-label { display: none; }
+.disconnect-form .disconnect-button {
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+  min-height: 42px;
+  padding: 0 .35rem 0 .8rem;
+  border: 1px solid #444;
+  background: #090909;
+  color: #aaa;
+}
+.disconnect-form .disconnect-button .nav-label {
+  display: inline;
+  order: -1;
+  font: 900 .66rem/1 ui-monospace, "SFMono-Regular", "Roboto Mono", Consolas, monospace;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.feedback-button {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  min-height: 42px;
+  padding: 0 .7rem;
+  border: 1px solid #444;
+  color: #aaa;
+  font: 900 .66rem/1 ui-monospace, "SFMono-Regular", "Roboto Mono", Consolas, monospace;
+  letter-spacing: .13em;
+}
+.feedback-button .nav-label { order: -1; }
+.feedback-button .feedback-icon { display: grid; place-items: center; }
+.feedback-icon svg { display: block; width: 21px; height: 21px; fill: currentColor; }
+.feedback-button:hover,
+.feedback-button:focus-visible,
+.mobile-feedback-button:hover,
+.mobile-feedback-button:focus-visible {
+  border-color: #fff;
+  background: #fff;
+  color: #000;
+  box-shadow: 3px 3px 0 #555, 0 0 12px #ffffff55;
+  text-shadow: none;
+  transform: translate(-1px, -1px);
+}
+.feedback-modal { width: min(620px, calc(100% - 1rem)); }
+.feedback-modal-title { display: flex; align-items: center; gap: 1rem; margin: .5rem 0 1rem; }
+.feedback-modal-title > .feedback-icon { display: grid; place-items: center; width: 54px; height: 54px; border: 2px solid #fff; background: #fff; color: #000; box-shadow: 5px 5px 0 #444; }
+.feedback-modal-title .feedback-icon svg { width: 30px; height: 30px; }
+.feedback-modal-title h2, .feedback-modal-title p { margin: 0; }
+.feedback-admin-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(260px, .75fr); gap: 1.25rem; }
+.feedback-queue, .feedback-archive { border: 1px solid #444; background: #050505; box-shadow: 7px 7px 0 #242424; }
+.feedback-queue > header, .feedback-archive > header { display: flex; align-items: center; justify-content: space-between; min-height: 42px; padding: .65rem .8rem; border-bottom: 1px solid #444; background: #111; font-size: .6rem; letter-spacing: .12em; }
+.feedback-queue > header div { display: flex; align-items: center; gap: .5rem; }
+.feedback-queue > header i { width: 8px; height: 8px; background: #fff; box-shadow: 0 0 8px #fff; }
+.feedback-report-list { display: grid; gap: 1px; background: #333; }
+.feedback-report { display: grid; grid-template-columns: minmax(0, 1fr) 74px; padding: 0; background: #080808; border-left: 4px solid #555; }
+.feedback-report.is-important { border-left-color: #fff; background: linear-gradient(100deg, #1b1b1b, #080808 55%); }
+.feedback-report > header, .feedback-report > header div, .feedback-report-meta { display: flex; align-items: center; }
+.feedback-report > header { grid-column: 1; justify-content: space-between; gap: 1rem; padding: 1rem 1rem 0; }
+.feedback-report > header div { gap: .55rem; }
+.feedback-report > header strong { color: #fff; font-size: .68rem; letter-spacing: .1em; }
+.feedback-report > header span, .feedback-report > header time, .feedback-report-meta { color: #777; font-size: .58rem; letter-spacing: .08em; }
+.feedback-report-meta { grid-column: 1; flex-wrap: wrap; gap: .5rem .75rem; margin-top: .55rem; padding: 0 1rem; }
+.feedback-report-meta b { color: #bbb; }
+.feedback-report-meta code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feedback-report > p { grid-column: 1; margin: 1rem; color: #ddd; font: .82rem/1.6 ui-monospace, "SFMono-Regular", Consolas, monospace; white-space: normal; }
+.feedback-ticket-controls { grid-column: 2; grid-row: 1 / 4; display: grid; grid-template-rows: 1fr 1fr; border-left: 1px solid #3a3a3a; }
+.feedback-ticket-controls form { display: grid; margin: 0; }
+.feedback-ticket-controls form + form { border-top: 1px solid #3a3a3a; }
+.feedback-ticket-controls button { display: grid; place-items: center; align-content: center; gap: .35rem; width: 100%; min-height: 72px; padding: .5rem .2rem; border: 0; background: #0e0e0e; color: #888; }
+.feedback-ticket-controls button:hover, .feedback-ticket-controls button:focus-visible { background: #fff; color: #000; }
+.feedback-ticket-controls button span { font: 1.45rem/1 ui-monospace, monospace; }
+.feedback-ticket-controls button b { font-size: .47rem; letter-spacing: .1em; }
+.feedback-report.is-important .feedback-priority-action { background: #e8e8e3; color: #000; }
+.feedback-archive button { padding: .55rem .7rem; font-size: .56rem; }
+.feedback-restore-action { border-color: #555; color: #aaa; letter-spacing: .08em; }
+.feedback-empty { padding: 2rem 1rem; background: #080808; color: #666; font: 700 .65rem ui-monospace, monospace; letter-spacing: .12em; text-align: center; }
+.feedback-archive > div { display: grid; gap: 1px; background: #292929; }
+.feedback-archive article { padding: .8rem; background: #090909; opacity: .72; }
+.feedback-archive article > div { display: flex; justify-content: space-between; gap: .5rem; font-size: .56rem; letter-spacing: .08em; }
+.feedback-archive article > div span { color: #777; }
+.feedback-archive article p { color: #999; font-size: .67rem; line-height: 1.45; }
+.feedback-archive article form { margin: 0; text-align: right; }
+@media (max-width: 900px) { .feedback-admin-grid { grid-template-columns: 1fr; } }
+@media (max-width: 560px) {
+  .feedback-report { grid-template-columns: 1fr; }
+  .feedback-ticket-controls { grid-column: 1; grid-row: auto; grid-template-columns: 1fr 1fr; grid-template-rows: none; border-top: 1px solid #3a3a3a; border-left: 0; }
+  .feedback-ticket-controls form + form { border-top: 0; border-left: 1px solid #3a3a3a; }
+  .feedback-ticket-controls button { min-height: 58px; grid-auto-flow: column; }
+}
+[data-feedback-admin-workspace][aria-busy="true"] { opacity: .55; pointer-events: none; }
+.disconnect-icon svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+}
+.disconnect-button,
+.mobile-disconnect-button { transition: color 100ms linear, background 100ms linear, border-color 100ms linear, box-shadow 100ms linear, transform 100ms linear; }
+.disconnect-button:hover,
+.disconnect-button:focus-visible,
+.mobile-disconnect-button:hover,
+.mobile-disconnect-button:focus-visible {
+  border-color: #fff;
+  background: #fff;
+  color: #000;
+  box-shadow: 3px 3px 0 #555, 0 0 12px #ffffff55;
+  transform: translate(-1px, -1px);
+}
+.disconnect-form .disconnect-button:hover .disconnect-icon,
+.disconnect-form .disconnect-button:focus-visible .disconnect-icon,
+.mobile-disconnect-button:hover .disconnect-icon,
+.mobile-disconnect-button:focus-visible .disconnect-icon { color: #000; }
 
 /* Versioned prompt controls */
 .control-tabs { position: sticky; top: 70px; z-index: 8; display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 1px; margin: -1rem 0 2rem; overflow: visible; border: 2px solid #fff; background: #555; box-shadow: 7px 7px 0 #242424; }
@@ -800,6 +914,15 @@ th[aria-sort="ascending"] .sort-heading i, th[aria-sort="descending"] .sort-head
 @media(max-width:800px){.weather-map-controls{justify-items:start;max-width:none}.weather-map-controls>p{text-align:left}}
 @media(max-width:650px){.form-builder-heading,.form-preview-label{align-items:start;flex-direction:column}.form-preview-label>p{text-align:left}.form-state{align-items:flex-start;flex-direction:column}.prompt-list>li{grid-template-columns:38px 1fr}.prompt-actions{grid-column:2;padding:0 0 .75rem}.prompt-info{padding-top:.75rem}.publish-bar,.publish-bar>div{align-items:stretch;flex-direction:column}.publish-bar button{width:100%}.preview-intensity-list{grid-template-columns:1fr}.preview-actions{align-items:stretch;flex-direction:column}.preview-actions button{width:100%}}
 
+/* Compact desktop: reclaim header space without switching to the mobile shell. */
+@media (min-width: 721px) and (max-width: 1100px) {
+  body:not(.login-screen) > header { justify-content: flex-start; }
+  body:not(.login-screen) > header .brand { display: none; }
+  body:not(.login-screen) > header nav { width: 100%; }
+  body:not(.login-screen) > header .feedback-button { margin-left: auto; }
+  body:not(.login-screen) > header .disconnect-form { margin-left: 0; }
+}
+
 /* Phone usability layer: preserve the desktop composition while keeping type and
    controls comfortable at narrow widths. */
 @media (max-width: 720px) {
@@ -1028,6 +1151,18 @@ th[aria-sort="ascending"] .sort-heading i, th[aria-sort="descending"] .sort-head
     width: 48px;
     margin: 0;
   }
+  .mobile-feedback-button {
+    display: grid;
+    place-items: center;
+    flex: 0 0 48px;
+    width: 48px;
+    min-height: 46px;
+    padding: 0;
+    border: 1px solid #444;
+    border-radius: 0;
+    background: #090909;
+    color: #fff;
+  }
   .mobile-disconnect-button {
     display: grid;
     place-items: center;
@@ -1038,10 +1173,7 @@ th[aria-sort="ascending"] .sort-heading i, th[aria-sort="descending"] .sort-head
     border-radius: 0;
     background: #090909;
   }
-  .mobile-disconnect-button span {
-    color: #fff;
-    font: 400 1.25rem/1 system-ui, sans-serif;
-  }
+  .mobile-disconnect-button .disconnect-icon { color: inherit; }
   .mobile-info-bar small {
     color: #666;
     font-size: .55rem;
@@ -1113,6 +1245,7 @@ th[aria-sort="ascending"] .sort-heading i, th[aria-sort="descending"] .sort-head
     border-radius: 0;
     background: transparent;
   }
+  body:not(.login-screen) > header .update-nav-dot { top: 3px; right: 8px; }
   body:not(.login-screen) > header .nav-item[aria-current="page"] {
     background: transparent;
     box-shadow: none;
@@ -1123,6 +1256,7 @@ th[aria-sort="ascending"] .sort-heading i, th[aria-sort="descending"] .sort-head
   body:not(.login-screen) > header .disconnect-form {
     display: none;
   }
+  body:not(.login-screen) > header nav > .feedback-button { display: none !important; }
   body:not(.login-screen) > header .disconnect-button {
     width: 48px;
     min-height: 46px;
