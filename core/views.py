@@ -429,7 +429,7 @@ def _recent_activity(events):
             target_label = event.metadata.get("username", "NEW ACCOUNT")
         elif event.action.startswith("system.update_"):
             target_label = f"JOURNALMAX {event.target_id}" if event.target_id else "UPDATE SERVICE"
-            target_url = "#updates"
+            target_url = reverse("control:updates")
         actor_label = (event.actor.get_full_name().strip() or event.actor.username) if event.actor else "JOURNALMAX SYSTEM"
         activity.append({
             "event": event,
@@ -466,11 +466,15 @@ def control_dashboard(request):
         else: account.delete_block = ""
     events = list(AuditEvent.objects.select_related("actor")[:100])
     emotions = list(Emotion.objects.order_by("sort_order"))
+    return render(request, "control/dashboard.html", {"journalmax_version": settings.JOURNALMAX_VERSION, "storage": storage, "counts": {"users": User.objects.count(), "cards": Card.objects.count(), "submitted": Card.objects.filter(status=Card.Status.SUBMITTED).count()}, "maintenance_cards": maintenance_cards, "events": events, "recent_activity": _recent_activity(events[:12]), "users": users, "patient_accounts": patient_accounts, "emotions": emotions, "custom_fields": custom_fields, "form_version": getattr(form_def, "version", None), "has_staged_changes": custom_fields != active_fields})
+
+@role_required(User.Role.ADMIN)
+def control_updates(request):
     try:
         updater_status = {"connected": True, **updater_request("status")}
     except UpdaterUnavailable as exc:
         updater_status = {"connected": False, "error": str(exc), "installed_version": settings.JOURNALMAX_VERSION, "job": {"phase": "offline", "message": "The host updater is not connected in this environment."}}
-    return render(request, "control/dashboard.html", {"journalmax_version": settings.JOURNALMAX_VERSION, "updater_status": updater_status, "storage": storage, "counts": {"users": User.objects.count(), "cards": Card.objects.count(), "submitted": Card.objects.filter(status=Card.Status.SUBMITTED).count()}, "maintenance_cards": maintenance_cards, "events": events, "recent_activity": _recent_activity(events[:12]), "users": users, "patient_accounts": patient_accounts, "emotions": emotions, "custom_fields": custom_fields, "form_version": getattr(form_def, "version", None), "has_staged_changes": custom_fields != active_fields})
+    return render(request, "control/updates.html", {"journalmax_version": settings.JOURNALMAX_VERSION, "updater_status": updater_status})
 
 def _updater_json(action, **parameters):
     try:
