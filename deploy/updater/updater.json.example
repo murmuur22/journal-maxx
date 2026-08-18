@@ -1,0 +1,12 @@
+{
+  "repository": "murmuur22/journal-maxx",
+  "image": "ghcr.io/murmuur22/journal-maxx",
+  "compose_file": "/opt/journalmax/compose.production.yaml",
+  "env_file": "/opt/journalmax/.env.production",
+  "state_dir": "/var/lib/journalmax/updater",
+  "socket_path": "/run/journalmax-updater/updater.sock",
+  "socket_group": 10001,
+  "health_url": "http://127.0.0.1:8800/health/ready",
+  "health_timeout_seconds": 120,
+  "service_name": "diary"
+}

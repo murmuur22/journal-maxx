@@ -30,6 +30,7 @@ from .forms import AddendumForm, ReviewerStatusForm, TherapistCommentForm
 from .models import AuditEvent, Card, CareRelationship, Emotion, FormDefinition, Invite, ReviewerMetadata, User
 from .services import add_addendum, add_therapist_comment, audit, card_directory, card_file_inventory, comments_filename, purge_card, quarantine_card, restore_card, storage_status, submit_card, verify_card_integrity
 from .security import encrypt_secret, generate_totp_secret, issue_recovery_codes, verify_second_factor, verify_totp
+from .updater import UpdaterUnavailable, updater_request
 
 def liveness(request): return JsonResponse({"status": "ok"})
 
@@ -396,6 +397,8 @@ def _recent_activity(events):
         "emotion.updated": "updated an emotion",
         "emotion.removed": "removed an emotion from new forms",
         "form.published": "published a new form version",
+        "system.update_checked": "checked for a JOURNALMAX update",
+        "system.update_requested": "authorized a JOURNALMAX update",
     }
     activity = []
     for event in events:
@@ -420,6 +423,9 @@ def _recent_activity(events):
             target_url = "#form"
         elif event.action == "invite.created":
             target_label = event.metadata.get("username", "NEW ACCOUNT")
+        elif event.action.startswith("system.update_"):
+            target_label = f"JOURNALMAX {event.target_id}" if event.target_id else "UPDATE SERVICE"
+            target_url = "#updates"
         actor_label = (event.actor.get_full_name().strip() or event.actor.username) if event.actor else "JOURNALMAX SYSTEM"
         activity.append({
             "event": event,
@@ -456,7 +462,46 @@ def control_dashboard(request):
         else: account.delete_block = ""
     events = list(AuditEvent.objects.select_related("actor")[:100])
     emotions = list(Emotion.objects.order_by("sort_order"))
-    return render(request, "control/dashboard.html", {"journalmax_version": settings.JOURNALMAX_VERSION, "storage": storage, "counts": {"users": User.objects.count(), "cards": Card.objects.count(), "submitted": Card.objects.filter(status=Card.Status.SUBMITTED).count()}, "maintenance_cards": maintenance_cards, "events": events, "recent_activity": _recent_activity(events[:12]), "users": users, "patient_accounts": patient_accounts, "emotions": emotions, "custom_fields": custom_fields, "form_version": getattr(form_def, "version", None), "has_staged_changes": custom_fields != active_fields})
+    try:
+        updater_status = {"connected": True, **updater_request("status")}
+    except UpdaterUnavailable as exc:
+        updater_status = {"connected": False, "error": str(exc), "installed_version": settings.JOURNALMAX_VERSION, "job": {"phase": "offline", "message": "The host updater is not connected in this environment."}}
+    return render(request, "control/dashboard.html", {"journalmax_version": settings.JOURNALMAX_VERSION, "updater_status": updater_status, "storage": storage, "counts": {"users": User.objects.count(), "cards": Card.objects.count(), "submitted": Card.objects.filter(status=Card.Status.SUBMITTED).count()}, "maintenance_cards": maintenance_cards, "events": events, "recent_activity": _recent_activity(events[:12]), "users": users, "patient_accounts": patient_accounts, "emotions": emotions, "custom_fields": custom_fields, "form_version": getattr(form_def, "version", None), "has_staged_changes": custom_fields != active_fields})
+
+def _updater_json(action, **parameters):
+    try:
+        return JsonResponse({"connected": True, **updater_request(action, **parameters)})
+    except UpdaterUnavailable as exc:
+        return JsonResponse({"connected": False, "error": str(exc)}, status=503)
+
+@never_cache
+@role_required(User.Role.ADMIN)
+@require_http_methods(["GET"])
+def control_update_status(request):
+    return _updater_json("status")
+
+@never_cache
+@role_required(User.Role.ADMIN)
+@require_POST
+def control_update_check(request):
+    response = _updater_json("check")
+    if response.status_code == 200:
+        payload = json.loads(response.content)
+        latest = payload.get("latest", {}).get("version", "")
+        audit(request.user, "system.update_checked", latest, {"update_available": payload.get("update_available", False)}, request)
+    return response
+
+@never_cache
+@role_required(User.Role.ADMIN)
+@require_POST
+def control_update_apply(request):
+    if not verify_second_factor(request.user, request.POST.get("code", "")):
+        return JsonResponse({"connected": True, "error": "A fresh authenticator or recovery code is required."}, status=403)
+    version = request.POST.get("version", "").strip()
+    response = _updater_json("apply", version=version)
+    if response.status_code == 200:
+        audit(request.user, "system.update_requested", version, request=request)
+    return response
 
 @role_required(User.Role.ADMIN)
 def control_activity(request):

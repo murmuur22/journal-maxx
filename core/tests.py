@@ -46,7 +46,7 @@ class DiaryTests(TestCase):
     def test_readiness_reports_release_database_and_card_volume(self):
         response = self.client.get(reverse("readiness"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["version"], "0.1.0")
+        self.assertEqual(response.json()["version"], "0.2.0")
         self.assertEqual(response.json()["database"], "ok")
         self.assertEqual(response.json()["card_storage"], "local")
         with override_settings(CARD_VOLUME_REQUIRE_MARKER=True):

@@ -53,15 +53,37 @@ sudo -u journalmax test -w /mnt/journalmax-cards
 
 The SMB account should be restricted to this share. Enable NAS snapshots and a separate encrypted backup; RAID alone is not a backup.
 
-## 3. Install the release configuration
+## 3. Install the release and updater
 
-Download `compose.production.yaml` and `.env.production.example` from the selected GitHub Release, or copy them once from the development checkout. Store them in `/opt/journalmax`:
+The host updater is intentionally separate from the web container. It runs as root, exposes only three fixed operations over a group-owned Unix socket, and is the only component allowed to control Docker or copy SQLite. Install GitHub CLI (`gh`) as well as Docker; the updater uses `gh attestation verify` to reject an image that was not built from the requested version tag and attested by this repository's release workflow on a GitHub-hosted runner.
+
+Download these assets from the selected GitHub Release:
+
+- `compose.production.yaml`
+- `journalmax-production.env.example`
+- `journalmax_updater.py`
+- `journalmax-updater.service`
+- `journalmax-updater.tmpfiles.conf`
+- `updater.json.example`
+
+Store them as follows:
 
 ```bash
-cd /opt/journalmax
-sudo cp .env.production.example .env.production
-sudo chmod 0600 .env.production
-sudoedit .env.production
+sudo install -d -o root -g root -m 0750 /opt/journalmax/updater
+sudo install -o root -g root -m 0644 compose.production.yaml /opt/journalmax/compose.production.yaml
+sudo install -o root -g root -m 0600 journalmax-production.env.example /opt/journalmax/.env.production
+sudo install -o root -g root -m 0755 journalmax_updater.py /opt/journalmax/updater/journalmax_updater.py
+sudo install -d -o root -g root -m 0755 /etc/journalmax
+sudo install -o root -g root -m 0600 updater.json.example /etc/journalmax/updater.json
+sudo install -o root -g root -m 0644 journalmax-updater.service /etc/systemd/system/journalmax-updater.service
+sudo install -o root -g root -m 0644 journalmax-updater.tmpfiles.conf /etc/tmpfiles.d/journalmax-updater.conf
+sudoedit /opt/journalmax/.env.production
+sudoedit /etc/journalmax/updater.json
+sudo systemd-tmpfiles --create /etc/tmpfiles.d/journalmax-updater.conf
+sudo systemctl daemon-reload
+sudo systemctl enable --now journalmax-updater.service
+sudo systemctl status journalmax-updater.service
+sudo test -S /run/journalmax-updater/updater.sock
 ```
 
 Set at least:
@@ -73,10 +95,13 @@ Set at least:
 
 Never regenerate `DIARY_SECRET_KEY` during an update.
 
-If the repository or GHCR package is private, authenticate Docker once with a GitHub token limited to package read access:
+The default updater configuration expects the files above in `/opt/journalmax`, the web service on `127.0.0.1:8800`, and the container group to use GID 10001. If those deliberate defaults differ, edit `/etc/journalmax/updater.json` before starting the service. Do not point the updater at a general-purpose Compose project.
+
+Authenticate root's GitHub CLI and container client once. Use a dedicated GitHub token limited to reading this public repository and package; the updater never needs write access:
 
 ```bash
-docker login ghcr.io
+sudo gh auth login
+sudo docker login ghcr.io
 ```
 
 ## 4. Start and identify the storage volume
@@ -117,40 +142,51 @@ sudo docker compose --env-file .env.production -f compose.production.yaml exec d
 
 Store the printed passphrase, authenticator key, and recovery codes securely. Put an HTTPS reverse proxy in front of `127.0.0.1:8800` before allowing real users to sign in.
 
-## 6. Manual update procedure
+## 6. Update from the control plane
 
-The admin-driven updater will automate this sequence. Until then, use it directly on the VM:
+Sign in as an administrator and open **Updates**. **Check for updates** reads the latest stable GitHub Release. If a newer semantic version exists, review its notes and choose **Install update**. A fresh authenticator or recovery code is required to authorize the operation.
 
-1. Read the GitHub Release notes and set `JOURNALMAX_RELEASE` to the exact new version.
-2. Pull the candidate image while the existing container remains online.
-3. Stop Journalmax and make a consistent state backup.
-4. Start the new release and wait for `/health/ready`.
-5. Keep the backup and previous image until the release is accepted.
+The host service then:
 
-Example backup and update:
+1. Reads the release manifest itself; the browser cannot choose an image or digest.
+2. Pulls the candidate by immutable digest and verifies its GitHub provenance attestation while the current service stays online.
+3. Stops Journalmax, copies SQLite into `/var/lib/journalmax/updater/backups`, and atomically selects the new release.
+4. Recreates only the `diary` service and waits for `/health/ready`.
+5. If readiness fails, stops the candidate, restores the prior environment value and SQLite backup, restarts the previous release, and reports `ROLLED BACK`.
+
+The SMB card archive is never copied or rewritten by the updater. Its path remains an external bind mount. The production environment file is preserved except for `JOURNALMAX_RELEASE`.
+
+Updater diagnostics are available without exposing diary contents:
+
+```bash
+sudo systemctl status journalmax-updater.service
+sudo journalctl -u journalmax-updater.service
+sudo tail -n 100 /var/lib/journalmax/updater/updater.log
+```
+
+### Emergency manual recovery
+
+If both the candidate and automatic rollback fail, leave the service off, inspect the updater log, restore the newest known-good SQLite file from `/var/lib/journalmax/updater/backups`, put the previous `JOURNALMAX_RELEASE` in `/opt/journalmax/.env.production`, then recreate `diary`. Never restore SQLite while the container is running.
+
+Manual recreate commands:
 
 ```bash
 cd /opt/journalmax
-sudo docker compose --env-file .env.production -f compose.production.yaml pull
 sudo docker compose --env-file .env.production -f compose.production.yaml stop diary
-sudo install -d -o root -g root -m 0700 /var/backups/journalmax
-sudo cp -a /var/lib/journalmax/state/diary.sqlite3 \
-  /var/backups/journalmax/diary.sqlite3.pre-update
-sudo docker compose --env-file .env.production -f compose.production.yaml up -d
+sudoedit /opt/journalmax/.env.production
+sudo docker compose --env-file .env.production -f compose.production.yaml up -d --force-recreate diary
 curl --retry 20 --retry-delay 3 --retry-all-errors --fail \
   http://127.0.0.1:8800/health/ready
 ```
-
-If readiness fails, stop the service, restore the pre-update SQLite file, set `JOURNALMAX_RELEASE` back to the previous version, and run `up -d` again. Do not restore the database while the container is running.
 
 ## 7. Publish a release from development
 
 After the development work is reviewed, committed, and pushed, create a semantic version tag:
 
 ```bash
-git tag -a v0.1.0 -m "JOURNALMAX v0.1.0"
+git tag -a v0.2.0 -m "JOURNALMAX v0.2.0"
 git push origin main
-git push origin v0.1.0
+git push origin v0.2.0
 ```
 
 The release workflow tests the tagged commit, publishes the container and provenance attestation, then creates the GitHub Release. A normal push to `main` never updates production.

@@ -36,6 +36,8 @@ CARD_ROOT = Path(os.environ.get("DIARY_CARD_ROOT", BASE_DIR / ".cards"))
 CARD_VOLUME_MARKER = ".journalmax-volume.json"
 CARD_VOLUME_REQUIRE_MARKER = os.environ.get("DIARY_CARD_VOLUME_REQUIRE_MARKER", "1" if "DIARY_CARD_ROOT" in os.environ else "0") == "1"
 CARD_VOLUME_ID = os.environ.get("DIARY_CARD_VOLUME_ID", "").strip()
+JOURNALMAX_UPDATER_SOCKET = Path(os.environ.get("JOURNALMAX_UPDATER_SOCKET", "/run/journalmax-updater/updater.sock"))
+JOURNALMAX_UPDATER_TIMEOUT = float(os.environ.get("JOURNALMAX_UPDATER_TIMEOUT", "5"))
 DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": STATE_ROOT / "diary.sqlite3", "OPTIONS": {"timeout": 20}}}
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.filebased.FileBasedCache", "LOCATION": STATE_ROOT / "cache"}}
 AUTH_USER_MODEL = "core.User"

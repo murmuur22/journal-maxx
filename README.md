@@ -8,6 +8,8 @@ Production consumes versioned images from GHCR while its configuration, SQLite s
 
 Development continues to use the local build in `compose.yaml`. Publishing a semantic version tag runs the test suite, builds and attests a container image, and creates a GitHub Release. Ordinary pushes to `main` do not update production.
 
+The production admin **Updates** workspace talks to a narrow root-owned host broker over a Unix socket. The broker verifies the release attestation, backs up SQLite, recreates only the application container, health-checks it, and automatically rolls back a failed candidate. The web container never receives the Docker socket.
+
 The app intentionally serves HTTP. Terminate HTTPS at your existing reverse proxy. Publish only `/login/`, `/logout/`, `/invite/`, `/review/`, `/static/`, and `/health/live` on the therapist hostname. Keep `/journal/`, `/control/`, and `/api/` behind the VPN. Proxy filtering is defense in depth; the app also checks roles for every route.
 
 ## Storage and recovery
