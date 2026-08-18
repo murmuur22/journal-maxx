@@ -1,4 +1,5 @@
 .env
+.env.production
 .state/
 .cards/
 __pycache__/

@@ -1,4 +1,14 @@
-{% extends "base.html" %}{% block title %}ACCESS // NULL DIARY{% endblock %}{% block content %}
-<section class="login panel"><p class="eyebrow">SECURE NODE // AUTHENTICATION REQUIRED</p><h1>ENTER THE THOUGHTSPACE</h1>
-{% if throttled %}<div class="message error">TOO MANY ATTEMPTS — retry in 15 minutes.</div>{% endif %}<form method="post">{% csrf_token %}<label>IDENTITY<input name="username" value="{{ username }}" autocomplete="username" required autofocus></label><label>PASSPHRASE<input name="password" type="password" autocomplete="current-password" required></label><label>AUTHENTICATOR OR RECOVERY CODE <small>(required for therapist/admin)</small><input name="totp" autocomplete="one-time-code"></label><button class="primary">AUTHENTICATE →</button></form></section>{% endblock %}
-
+{% extends "base.html" %}{% block title %}ACCESS // JOURNALMAX{% endblock %}{% block body_class %}login-screen{% endblock %}{% block content %}
+<section class="login-minimal">
+  <div class="brand login-brand" aria-hidden="true"><span>JOURNAL</span><b>MAX</b></div>
+  <h1 class="sr-only">Sign in</h1>
+  {% if expired %}<div class="message error">LOGIN SESSION EXPIRED — enter your credentials again.</div>{% endif %}
+  {% if throttled %}<div class="message error">TOO MANY ATTEMPTS — retry in 15 minutes.</div>{% endif %}
+  <form method="post">{% csrf_token %}
+    <label>IDENTITY<input name="username" value="{{ username }}" autocomplete="username" required autofocus></label>
+    <label>PASSPHRASE<input name="password" type="password" autocomplete="current-password" required></label>
+    <label>CODE<input name="totp" autocomplete="one-time-code"></label>
+    <button class="primary">ENTER →</button>
+  </form>
+</section>
+{% endblock %}

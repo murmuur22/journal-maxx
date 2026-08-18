@@ -13,6 +13,13 @@ class User(AbstractUser):
     totp_secret_encrypted = models.TextField(blank=True)
     totp_confirmed = models.BooleanField(default=False)
 
+class CareRelationship(models.Model):
+    therapist = models.ForeignKey(User, on_delete=models.CASCADE, related_name="patient_assignments")
+    patient = models.ForeignKey(User, on_delete=models.CASCADE, related_name="therapist_assignments")
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["therapist", "patient"], name="one_therapist_patient_relationship")]
+
 class Emotion(models.Model):
     slug = models.SlugField(unique=True)
     label = models.CharField(max_length=80)
@@ -43,6 +50,7 @@ class Card(models.Model):
     form_version = models.PositiveIntegerField(default=1)
     folder_name = models.CharField(max_length=160, blank=True)
     checksum = models.CharField(max_length=64, blank=True)
+    comments_checksum = models.CharField(max_length=64, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
@@ -67,6 +75,15 @@ class Addendum(models.Model):
     filename = models.CharField(max_length=255)
     checksum = models.CharField(max_length=64)
     created_at = models.DateTimeField(auto_now_add=True)
+
+class TherapistComment(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    card = models.ForeignKey(Card, on_delete=models.CASCADE, related_name="therapist_comments")
+    reviewer = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name="therapist_comments")
+    author_name = models.CharField(max_length=150)
+    body = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta: ordering = ["created_at", "id"]
 
 class ReviewerMetadata(models.Model):
     card = models.ForeignKey(Card, on_delete=models.CASCADE, related_name="reviewer_metadata")

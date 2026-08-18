@@ -1,3 +1,29 @@
-{% extends "base.html" %}{% block content %}<div class="hero"><p class="eyebrow">REVIEWER CHANNEL</p><h1>RECENT CARDS</h1></div>
-<form class="filters"><label>EMOTION<select name="emotion"><option value="">All signals</option>{% for e in emotions %}<option value="{{ e.slug }}" {% if filter_emotion == e.slug %}selected{% endif %}>{{ e.label }}</option>{% endfor %}</select></label><label>TAG<input name="tag" value="{{ filters.tag }}"></label><label>COLLECTION<input name="collection" value="{{ filters.collection }}"></label><label>SORT<select name="sort"><option value="newest">Newest</option><option value="oldest" {% if filters.sort == 'oldest' %}selected{% endif %}>Oldest</option></select></label><label><input type="checkbox" name="starred" value="1" {% if filters.starred %}checked{% endif %}> STARRED</label><label><input type="checkbox" name="unread" value="1" {% if filters.unread %}checked{% endif %}> UNREAD</label><button>FILTER</button></form>
-<div class="card-list">{% for card in cards %}<a class="card-row" href="{% url 'review:detail' card.id %}"><time>{{ card.local_date }}</time><span>{% for e in card.content_index.emotions %}<i>{{ e.label }} {{ e.intensity }}/5</i>{% endfor %}</span><b>{{ card.addenda.count }} ADDENDA</b></a>{% empty %}<div class="panel">No submitted cards.</div>{% endfor %}</div>{% endblock %}
+{% extends "base.html" %}{% block title %}CARDS // JOURNALMAX{% endblock %}{% block content %}
+<div class="review-hero"><div><p class="eyebrow">THERAPIST CHANNEL // {{ unread_count }} UNREAD</p><h1>PATIENT<br>CARDS</h1></div><p>Open a card to mark it reviewed. Unread cards stay visually prominent until you have seen them.</p></div>
+
+<nav class="view-tabs" aria-label="Cards view"><a href="{% url 'review:list' %}" {% if filters.view != 'calendar' %}aria-current="page"{% endif %}>LIST</a><a href="?view=calendar&month={{ month_start|date:'Y-m' }}" {% if filters.view == 'calendar' %}aria-current="page"{% endif %}>CALENDAR</a></nav>
+
+{% if filters.view == 'calendar' %}
+<section class="card-calendar" aria-label="Diary cards for {{ month_start|date:'F Y' }}">
+  <header class="calendar-header"><a href="?view=calendar&month={{ previous_month }}" aria-label="Previous month">←</a><div><p class="eyebrow">CARD CALENDAR</p><h2>{{ month_start|date:"F Y" }}</h2></div><a href="?view=calendar&month={{ next_month }}" aria-label="Next month">→</a></header>
+  <div class="calendar-grid" role="grid">
+    {% for weekday in "MTWTFSS" %}<div class="calendar-weekday" role="columnheader">{{ weekday }}</div>{% endfor %}
+    {% for week in calendar_weeks %}{% for day in week %}<div class="calendar-day{% if not day.in_month %} is-outside{% endif %}{% if day.is_today %} is-today{% endif %}{% if day.card %} has-card{% endif %}" role="gridcell"><time datetime="{{ day.date|date:'Y-m-d' }}">{{ day.date.day }}</time>
+      {% if day.card %}{% with emotion=day.card.prominent_emotion %}<a class="emotion-stamp{% if not day.card.is_read %} is-unread{% endif %}" href="{% url 'review:detail' day.card.id %}" style="--emotion:{{ emotion.color }};--level:{{ emotion.intensity }}" aria-label="{{ day.date|date:'F j' }}: {{ emotion.label }}, intensity {{ emotion.intensity }} of 5{% if not day.card.is_read %}, unread{% endif %}"><span>{{ emotion.face }}</span><b>{{ emotion.label }}</b></a>{% endwith %}{% endif %}
+    </div>{% endfor %}{% endfor %}
+  </div>
+  <p class="calendar-note"><i></i> Unread card <span>Each stamp shows the strongest emotion recorded that day.</span></p>
+</section>
+{% else %}
+<div class="review-toolbar">
+  <nav class="status-tabs" aria-label="Card status"><a href="?{% if filters.sort %}sort={{ filters.sort }}{% endif %}" {% if filters.status != 'unread' %}aria-current="page"{% endif %}>ALL CARDS</a><a href="?status=unread{% if filters.sort %}&sort={{ filters.sort }}{% endif %}" {% if filters.status == 'unread' %}aria-current="page"{% endif %}>UNREAD <b>{{ unread_count }}</b></a></nav>
+  <form><input type="hidden" name="status" value="{{ filters.status }}"><label>SORT<select name="sort" onchange="this.form.submit()"><option value="newest">Newest first</option><option value="oldest" {% if filters.sort == 'oldest' %}selected{% endif %}>Oldest first</option></select></label></form>
+</div>
+
+<div class="review-card-list">{% for card in cards %}<a class="review-card {% if not card.is_read %}is-unread{% else %}is-read{% endif %}" href="{% url 'review:detail' card.id %}">
+  <div class="review-card-date"><span>{% if card.is_read %}REVIEWED{% else %}UNREAD{% endif %}</span><time><b>{{ card.local_date|date:"d" }}</b>{{ card.local_date|date:"M Y" }}</time></div>
+  <div class="review-emotions">{% for emotion in card.display_emotions %}<div class="review-emotion" style="--emotion:{{ emotion.color }};--level:{{ emotion.intensity }}" aria-label="{{ emotion.label }}, intensity {{ emotion.intensity }} of 5"><span>{{ emotion.face }}</span><b>{{ emotion.label }}</b><small>{{ emotion.intensity }} / 5</small></div>{% endfor %}</div>
+  <div class="review-card-meta"><span>{{ card.addenda.count }} ADDENDUM{{ card.addenda.count|pluralize|upper }}</span><strong>OPEN CARD →</strong></div>
+</a>{% empty %}<section class="panel review-empty"><p class="eyebrow">QUEUE CLEAR</p><h2>{% if filters.status == 'unread' %}No unread cards.{% else %}No submitted cards yet.{% endif %}</h2></section>{% endfor %}</div>
+{% endif %}
+{% endblock %}

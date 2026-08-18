@@ -1,6 +1,16 @@
 {% extends "base.html" %}{% block content %}<div class="hero"><p class="eyebrow">LOCKED RECORD // {{ card.id }}</p><h1>{{ card.local_date }}</h1></div>
-<div class="layout"><article class="panel markdown">{{ rendered|safe }}
+<nav class="content-tabs" aria-label="Card display"><a href="?view=reading" {% if not raw_mode %}aria-current="page"{% endif %}>READING VIEW</a><a href="?view=raw" {% if raw_mode %}aria-current="page"{% endif %}>RAW MARKDOWN</a></nav>
+<div class="layout"><article class="panel {% if raw_mode %}raw-view{% else %}markdown{% endif %}">
+{% if raw_mode %}<div class="raw-documents">{% for document in raw_documents %}<section class="raw-document"><header><span>{{ document.label|default:"IMMUTABLE MARKDOWN" }}</span><b>{{ document.filename }}</b></header><pre><code>{{ document.content }}</code></pre></section>{% endfor %}</div>
+{% else %}{{ rendered|safe }}
 {% if card.attachments.exists %}<h2>Attachments</h2><ul>{% for file in card.attachments.all %}<li><a href="{% if user.role == 'patient' %}{% url 'journal:attachment' card.id file.id %}{% else %}{% url 'review:attachment' card.id file.id %}{% endif %}">{{ file.original_name }}</a> <small>{{ file.size }} bytes</small></li>{% endfor %}</ul>{% endif %}
-{% for item in card.addenda.all %}<div class="addendum"><p class="eyebrow">ADDENDUM // {{ item.created_at }}</p>{{ item.body|linebreaks }}</div>{% endfor %}</article>
-<aside>{% if user.role == 'patient' %}<form class="panel" method="post" action="{% url 'journal:addendum' card.id %}">{% csrf_token %}<h2>Append, never overwrite</h2>{{ addendum_form.as_p }}<button class="primary">ADD ADDENDUM</button></form>{% else %}<form class="panel" method="post" action="{% url 'review:metadata' card.id %}">{% csrf_token %}<h2>Private organization</h2>{{ reviewer_form.as_p }}<button class="primary">SAVE PRIVATE DATA</button></form>{% endif %}</aside></div>{% endblock %}
-
+{% for item in card.addenda.all %}<details class="addendum" open><summary>ADDENDUM // {{ item.created_at }}</summary><div class="addendum-body">{{ item.body|linebreaks }}</div></details>{% endfor %}
+{% endif %}</article>
+<aside class="card-detail-sidebar">
+{% if card.therapist_comments.exists or user.role == 'reviewer' %}<section class="therapist-comments"><header><div><p class="eyebrow">SHARED THREAD</p><h2>Therapist comments</h2></div><span>PATIENT VISIBLE</span></header><div class="therapist-comment-list">{% for comment in card.therapist_comments.all %}<article class="therapist-comment"><div><b>{{ comment.author_name }}</b><time datetime="{{ comment.created_at|date:'c' }}">{{ comment.created_at }}</time></div>{{ comment.body|linebreaks }}</article>{% empty %}<p class="therapist-comments-empty">NO COMMENTS YET</p>{% endfor %}</div></section>{% endif %}
+{% if user.role == 'patient' %}
+<form class="panel form-stack" method="post" action="{% url 'journal:addendum' card.id %}">{% csrf_token %}<p class="eyebrow">PERMANENT ADDITION</p><h2>Append, never overwrite</h2><label for="{{ addendum_form.body.id_for_label }}">ADD CONTEXT {{ addendum_form.body }}</label><button class="primary">ADD ADDENDUM</button></form>
+{% else %}
+<form class="panel form-stack therapist-comment-form" method="post" action="{% url 'review:comment' card.id %}">{% csrf_token %}<p class="eyebrow">SHARED WITH PATIENT</p><h2>Leave a comment</h2><p>This becomes part of the card’s comment log and is visible to the patient.</p><label for="{{ comment_form.body.id_for_label }}">COMMENT {{ comment_form.body }}</label><button class="primary">POST COMMENT</button></form>
+<form class="panel review-status" method="post" action="{% url 'review:metadata' card.id %}">{% csrf_token %}<label class="checkbox-control" for="{{ reviewer_status_form.is_read.id_for_label }}">{{ reviewer_status_form.is_read }}<span><b>REVIEWED</b><small>Uncheck to return this card to the unread queue.</small></span></label><button>SAVE REVIEW STATUS</button></form>
+{% endif %}</aside></div>{% endblock %}

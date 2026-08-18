@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hero deleted-entry-hero">
+  <p class="eyebrow">TODAY // ENTRY UNAVAILABLE</p>
+  <h1>RECENTLY<br>DELETED</h1>
+</div>
+<section class="panel deleted-entry-notice">
+  <span aria-hidden="true">×</span>
+  <div>
+    <h2>Today’s entry is in recovery storage.</h2>
+    <p>It cannot be opened or replaced while it is in Recently Deleted. A system administrator can restore it during the seven-day recovery window.</p>
+    <dl><dt>ENTRY DATE</dt><dd>{{ card.local_date }}</dd><dt>RECOVERABLE UNTIL</dt><dd>{{ card.purge_after|default:"Recovery deadline unavailable" }}</dd></dl>
+    <a class="button" href="{% url 'journal:history' %}">OPEN ENTRY HISTORY →</a>
+  </div>
+</section>
+{% endblock %}

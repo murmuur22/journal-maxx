@@ -1,7 +1,7 @@
 import hashlib
 from django.http import JsonResponse
 from django.utils import timezone
-from .models import ApiToken, Card, User
+from .models import ApiToken, Card, CareRelationship, User
 from .services import storage_status, verify_card_integrity
 
 def token_user(request, scope):
@@ -21,7 +21,8 @@ def cards(request):
     if not user: return unauthorized()
     query = Card.objects.all()
     if user.role == User.Role.PATIENT: query = query.filter(patient=user)
-    elif user.role not in (User.Role.REVIEWER, User.Role.ADMIN): return unauthorized()
+    elif user.role == User.Role.REVIEWER: query = query.filter(patient__therapist_assignments__therapist=user)
+    elif user.role != User.Role.ADMIN: return unauthorized()
     data = [{"id": str(c.id), "date": c.local_date.isoformat(), "status": c.status, "addenda_count": c.addenda.count(), "attachment_count": c.attachments.count(), "integrity": verify_card_integrity(c) if c.status != Card.Status.DRAFT else "draft"} for c in query]
     return JsonResponse({"results": data})
 
@@ -31,6 +32,7 @@ def card(request, card_id):
     try: item = Card.objects.get(id=card_id)
     except Card.DoesNotExist: return JsonResponse({"error": "not_found"}, status=404)
     if user.role == User.Role.PATIENT and item.patient_id != user.id: return JsonResponse({"error": "not_found"}, status=404)
+    if user.role == User.Role.REVIEWER and not CareRelationship.objects.filter(therapist=user, patient_id=item.patient_id).exists(): return JsonResponse({"error": "not_found"}, status=404)
     return JsonResponse({"id": str(item.id), "date": item.local_date.isoformat(), "status": item.status, "submitted_at": item.submitted_at, "addenda_count": item.addenda.count(), "attachment_count": item.attachments.count(), "integrity": verify_card_integrity(item) if item.status != Card.Status.DRAFT else "draft"})
 
 def readiness(request):

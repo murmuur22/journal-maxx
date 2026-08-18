@@ -1,10 +1,10 @@
 {% load static %}<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{% block title %}NULL//DIARY{% endblock %}</title><link rel="stylesheet" href="{% static 'app.css' %}">{% block head %}{% endblock %}</head>
-<body><div class="scanlines" aria-hidden="true"></div>
-<header><a class="brand" href="/">NULL//DIARY</a>{% if user.is_authenticated %}<nav>
+<title>{% block title %}JOURNALMAX{% endblock %}</title><link rel="stylesheet" href="{% static 'app.css' %}"><link rel="stylesheet" href="{% static 'theme.css' %}">{% block head %}{% endblock %}</head>
+<body class="{% block body_class %}{% endblock %}"><div class="scanlines" aria-hidden="true"></div>
+<header><a class="brand" href="/" aria-label="JOURNALMAX"><span>JOURNAL</span><b>MAX</b>{% if user.is_authenticated %}<small class="brand-id">ID-{{ user.id|stringformat:"04d" }} // {{ user.username }}</small>{% endif %}</a>{% if user.is_authenticated %}<nav>
 {% if user.role == 'patient' %}<a href="/journal/">TODAY</a><a href="/journal/history/">ARCHIVE</a><a href="/journal/trends/">SIGNALS</a>{% endif %}
-{% if user.role == 'reviewer' %}<a href="/review/">CARDS</a><a href="/review/trends/">SIGNALS</a>{% endif %}
+{% if user.role == 'reviewer' %}<form class="patient-switcher" method="post" action="{% url 'review:patient_select' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><label><span>PATIENT</span><select name="patient_id" onchange="this.form.submit()" aria-label="Select patient">{% for patient in review_patient_options %}<option value="{{ patient.id }}" {% if review_patient.id == patient.id %}selected{% endif %}>{{ patient.username }}</option>{% empty %}<option disabled selected>NO PATIENTS</option>{% endfor %}</select></label></form><a href="/review/">CARDS</a><a href="/review/trends/">SIGNALS</a>{% endif %}
 {% if user.role == 'admin' %}<a href="/control/">CONTROL</a>{% endif %}
 <form action="/logout/" method="post">{% csrf_token %}<button class="link">DISCONNECT</button></form></nav>{% endif %}</header>
 <main>{% for message in messages %}<div class="message {{ message.tags }}">{{ message }}</div>{% endfor %}{% block content %}{% endblock %}</main>
