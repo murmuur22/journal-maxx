@@ -20,7 +20,7 @@ class UpdaterControlTests(TestCase):
     def test_update_workspace_and_check_are_admin_only(self, request):
         request.return_value = {"installed_version": "0.2.0", "job": {"phase": "idle", "message": "Ready."}}
         self.client.force_login(self.admin)
-        page = self.client.get(reverse("control:dashboard"))
+        page = self.client.get(reverse("control:updates"))
         self.assertContains(page, "RELEASE CONTROL")
         self.assertContains(page, "HOST UPDATER CONNECTED")
         request.return_value = {
@@ -35,6 +35,7 @@ class UpdaterControlTests(TestCase):
         self.assertTrue(checked.json()["update_available"])
         self.assertTrue(AuditEvent.objects.filter(action="system.update_checked", target_id="0.3.0").exists())
         self.client.force_login(self.patient)
+        self.assertEqual(self.client.get(reverse("control:updates")).status_code, 403)
         self.assertEqual(self.client.get(reverse("control:update_status")).status_code, 403)
 
     @patch("core.views.updater_request")

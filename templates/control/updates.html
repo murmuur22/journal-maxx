@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% load static %}
+{% block title %}UPDATES // JOURNALMAX{% endblock %}
+{% block content %}
+<div class="hero"><p class="eyebrow">RELEASE CONTROL // STABLE CHANNEL</p><h1>UPDATES</h1></div>
+<div class="section-heading"><div><p class="eyebrow">RELEASE CONTROL</p><h2>System updates</h2></div><p>Inspect the stable channel and authorize a verified release. Existing settings and card storage remain in place.</p></div>
+<section class="update-workspace{% if updater_status.connected %} is-connected{% else %} is-offline{% endif %}" data-update-workspace data-status-url="{% url 'control:update_status' %}" data-check-url="{% url 'control:update_check' %}" data-apply-url="{% url 'control:update_apply' %}">
+  <header><div><i aria-hidden="true"></i><span data-update-connection>{% if updater_status.connected %}HOST UPDATER CONNECTED{% else %}UPDATER NOT CONNECTED{% endif %}</span></div><b>STABLE CHANNEL</b></header>
+  <div class="update-release-grid">
+    <article><span>INSTALLED</span><strong data-update-installed>v{{ updater_status.installed_version|default:journalmax_version }}</strong><small>RUNNING RELEASE</small></article>
+    <i aria-hidden="true">→</i>
+    <article><span>LATEST</span><strong data-update-latest>CHECK REQUIRED</strong><small data-update-availability>REMOTE RELEASE UNKNOWN</small></article>
+  </div>
+  <div class="update-status-line"><span data-update-phase>{{ updater_status.job.phase|default:"offline"|upper }}</span><p data-update-message>{% if updater_status.job.message %}{{ updater_status.job.message }}{% elif updater_status.error %}{{ updater_status.error }}{% else %}Updater status unavailable.{% endif %}</p><time data-update-time>{% if updater_status.job.updated_at %}{{ updater_status.job.updated_at }}{% endif %}</time></div>
+  <div class="update-actions"><a data-update-release-link href="https://github.com/murmuur22/journal-maxx/releases" target="_blank" rel="noopener">RELEASE NOTES ↗</a><button type="button" data-update-check {% if not updater_status.connected %}disabled{% endif %}>CHECK FOR UPDATES</button><button type="button" class="primary" data-update-open disabled>INSTALL UPDATE</button></div>
+  <footer><span>VERIFICATION</span><b>GITHUB ATTESTATION + SHA-256 DIGEST</b><span>RECOVERY</span><b>SQLITE BACKUP + AUTOMATIC ROLLBACK</b></footer>
+  {% csrf_token %}
+</section>
+<aside class="update-boundary"><b>SECURITY BOUNDARY</b><p>The browser can request only status, check, or install. A separate root-owned host service chooses the release, verifies its signed provenance, backs up the database, health-checks the replacement, and restores the previous release if startup fails.</p></aside>
+<dialog class="action-modal update-modal" id="update-confirm"><div class="modal-heading"><span>PRIVILEGED RELEASE ACTION</span><button type="button" data-modal-close aria-label="Close">×</button></div><h2>Install <span data-update-modal-version>the latest release</span>?</h2><p>JOURNALMAX will briefly restart after the new image is downloaded and verified. The updater preserves your environment file and external card volume.</p><form data-update-apply-form>{% csrf_token %}<input type="hidden" name="version" data-update-version><label>{% if user.totp_confirmed %}FRESH AUTHENTICATOR OR RECOVERY CODE{% else %}CURRENT PASSPHRASE{% endif %}<input name="code" {% if user.totp_confirmed %}autocomplete="one-time-code"{% else %}type="password" autocomplete="current-password"{% endif %} required></label><div class="update-modal-feedback" data-update-feedback aria-live="polite"></div><div class="modal-actions"><button type="button" data-modal-close>CANCEL</button><button class="primary">AUTHORIZE + INSTALL</button></div></form></dialog>
+{% endblock %}
+{% block scripts %}<script src="{% static 'control.js' %}" defer></script>{% endblock %}

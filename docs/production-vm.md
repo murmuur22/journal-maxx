@@ -148,9 +148,9 @@ This creates the `admin` identity with a generated temporary passphrase and no a
 
 Put an HTTPS reverse proxy in front of the service before allowing real users to sign in.
 
-## 6. Update from the control plane
+## 6. Update from the Updates page
 
-Sign in as an administrator and open **Updates**. **Check for updates** reads the latest stable GitHub Release. If a newer semantic version exists, review its notes and choose **Install update**. The operation requires a fresh authenticator/recovery code when MFA is enrolled, or the administrator’s current passphrase otherwise.
+Sign in as an administrator and open the dedicated **Updates** page. **Check for updates** reads the latest stable GitHub Release. If a newer semantic version exists, review its notes and choose **Install update**. The operation requires a fresh authenticator/recovery code when MFA is enrolled, or the administrator’s current passphrase otherwise.
 
 To recover a locked password-only administrator from the host console:
 

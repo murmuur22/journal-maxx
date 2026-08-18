@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% load static %}
 {% block content %}
-<div class="hero"><p class="eyebrow">SYSTEM OPERATOR // CONTENT BLIND</p><h1>CONTROL PLANE</h1></div>
+<div class="hero"><p class="eyebrow">SYSTEM OPERATOR // CONTENT BLIND</p><h1>CONTROL PANEL</h1></div>
 
 <nav class="control-tabs" aria-label="Control panel sections" role="tablist">
   <a href="#overview" role="tab" aria-controls="overview">OVERVIEW</a>
@@ -8,7 +8,6 @@
   <a href="#emotions" role="tab" aria-controls="emotions">EMOTIONS</a>
   <a href="#form" role="tab" aria-controls="form">FORM</a>
   <a href="#maintenance" role="tab" aria-controls="maintenance">MAINTENANCE</a>
-  <a href="#updates" role="tab" aria-controls="updates">UPDATES</a>
   <a href="#audit" role="tab" aria-controls="audit">AUDIT</a>
 </nav>
 
@@ -80,24 +79,6 @@
     {% if item.card.status == 'quarantined' %}<dialog class="action-modal" id="restore-{{ item.card.id }}"><div class="modal-heading"><span>RECOVERY ACTION</span><button type="button" data-modal-close aria-label="Close">×</button></div><h2>Restore this card?</h2><p>The card will return to the therapist and patient views immediately.</p><dl><dt>DATE</dt><dd>{{ item.card.local_date }}</dd><dt>CARD ID</dt><dd><code>{{ item.card.id }}</code></dd><dt>DELETE DEADLINE</dt><dd>{{ item.card.purge_after }}</dd></dl><div class="modal-actions"><button type="button" data-modal-close>CANCEL</button><form method="post" action="{% url 'control:restore' item.card.id %}">{% csrf_token %}<button class="primary">RESTORE CARD</button></form></div></dialog><dialog class="action-modal danger-modal" id="purge-{{ item.card.id }}"><div class="modal-heading"><span>IRREVERSIBLE STORAGE ACTION</span><button type="button" data-modal-close aria-label="Close">×</button></div><h2>Permanently delete this card?</h2><p>This bypasses the remaining recovery window, destroys the stored directory and database record, and cannot be undone. The patient will be able to create a new entry for this date.</p><dl><dt>DATE</dt><dd>{{ item.card.local_date }}</dd><dt>CARD ID</dt><dd><code>{{ item.card.id }}</code></dd></dl><form method="post" action="{% url 'control:purge' item.card.id %}">{% csrf_token %}<label>TYPE CARD ID TO CONFIRM<input name="confirm_id" required autocomplete="off"></label><div class="modal-actions"><button type="button" data-modal-close>CANCEL</button><button class="danger">PERMANENTLY DELETE</button></div></form></dialog>
     {% elif item.card.status == 'submitted' %}<dialog class="action-modal danger-modal" id="delete-{{ item.card.id }}"><div class="modal-heading"><span>DESTRUCTIVE ACTION</span><button type="button" data-modal-close aria-label="Close">×</button></div><h2>Delete this card?</h2><p>It will move to Recently Deleted for seven days before permanent deletion. You can restore it during that window.</p><dl><dt>DATE</dt><dd>{{ item.card.local_date }}</dd><dt>CARD ID</dt><dd><code>{{ item.card.id }}</code></dd></dl><form method="post" action="{% url 'control:quarantine' item.card.id %}">{% csrf_token %}<label>TYPE CARD ID TO CONFIRM<input name="confirm_id" required autocomplete="off"></label><div class="modal-actions"><button type="button" data-modal-close>CANCEL</button><button class="danger">DELETE CARD</button></div></form></dialog>{% endif %}
   </td></tr>{% endfor %}</tbody></table></div></section>
-</div>
-
-<div id="updates" class="control-tab-panel" role="tabpanel" tabindex="0" hidden>
-  <div class="section-heading"><div><p class="eyebrow">RELEASE CONTROL</p><h2>Updates</h2></div><p>Inspect the stable channel and authorize a verified release. Existing settings and card storage remain in place.</p></div>
-  <section class="update-workspace{% if updater_status.connected %} is-connected{% else %} is-offline{% endif %}" data-update-workspace data-status-url="{% url 'control:update_status' %}" data-check-url="{% url 'control:update_check' %}" data-apply-url="{% url 'control:update_apply' %}">
-    <header><div><i aria-hidden="true"></i><span data-update-connection>{% if updater_status.connected %}HOST UPDATER CONNECTED{% else %}UPDATER NOT CONNECTED{% endif %}</span></div><b>STABLE CHANNEL</b></header>
-    <div class="update-release-grid">
-      <article><span>INSTALLED</span><strong data-update-installed>v{{ updater_status.installed_version|default:journalmax_version }}</strong><small>RUNNING RELEASE</small></article>
-      <i aria-hidden="true">→</i>
-      <article><span>LATEST</span><strong data-update-latest>CHECK REQUIRED</strong><small data-update-availability>REMOTE RELEASE UNKNOWN</small></article>
-    </div>
-    <div class="update-status-line"><span data-update-phase>{{ updater_status.job.phase|default:"offline"|upper }}</span><p data-update-message>{% if updater_status.job.message %}{{ updater_status.job.message }}{% elif updater_status.error %}{{ updater_status.error }}{% else %}Updater status unavailable.{% endif %}</p><time data-update-time>{% if updater_status.job.updated_at %}{{ updater_status.job.updated_at }}{% endif %}</time></div>
-    <div class="update-actions"><a data-update-release-link href="https://github.com/murmuur22/journal-maxx/releases" target="_blank" rel="noopener">RELEASE NOTES ↗</a><button type="button" data-update-check {% if not updater_status.connected %}disabled{% endif %}>CHECK FOR UPDATES</button><button type="button" class="primary" data-update-open disabled>INSTALL UPDATE</button></div>
-    <footer><span>VERIFICATION</span><b>GITHUB ATTESTATION + SHA-256 DIGEST</b><span>RECOVERY</span><b>SQLITE BACKUP + AUTOMATIC ROLLBACK</b></footer>
-    {% csrf_token %}
-  </section>
-  <aside class="update-boundary"><b>SECURITY BOUNDARY</b><p>The browser can request only status, check, or install. A separate root-owned host service chooses the release, verifies its signed provenance, backs up the database, health-checks the replacement, and restores the previous release if startup fails.</p></aside>
-  <dialog class="action-modal update-modal" id="update-confirm"><div class="modal-heading"><span>PRIVILEGED RELEASE ACTION</span><button type="button" data-modal-close aria-label="Close">×</button></div><h2>Install <span data-update-modal-version>the latest release</span>?</h2><p>JOURNALMAX will briefly restart after the new image is downloaded and verified. The updater preserves your environment file and external card volume.</p><form data-update-apply-form>{% csrf_token %}<input type="hidden" name="version" data-update-version><label>{% if user.totp_confirmed %}FRESH AUTHENTICATOR OR RECOVERY CODE{% else %}CURRENT PASSPHRASE{% endif %}<input name="code" {% if user.totp_confirmed %}autocomplete="one-time-code"{% else %}type="password" autocomplete="current-password"{% endif %} required></label><div class="update-modal-feedback" data-update-feedback aria-live="polite"></div><div class="modal-actions"><button type="button" data-modal-close>CANCEL</button><button class="primary">AUTHORIZE + INSTALL</button></div></form></dialog>
 </div>
 
 <div id="audit" class="control-tab-panel" role="tabpanel" tabindex="0" hidden>

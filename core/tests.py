@@ -8,6 +8,7 @@ from pathlib import Path
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -46,7 +47,7 @@ class DiaryTests(TestCase):
     def test_readiness_reports_release_database_and_card_volume(self):
         response = self.client.get(reverse("readiness"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["version"], "0.2.2")
+        self.assertEqual(response.json()["version"], "0.3.0")
         self.assertEqual(response.json()["database"], "ok")
         self.assertEqual(response.json()["card_storage"], "local")
         with override_settings(CARD_VOLUME_REQUIRE_MARKER=True):
@@ -464,6 +465,34 @@ class DiaryTests(TestCase):
         self.admin.refresh_from_db()
         self.assertFalse(self.admin.totp_confirmed)
         self.assertFalse(self.admin.recovery_codes.exists())
+
+    @override_settings(DEBUG=True)
+    def test_preview_account_setup_is_repeatable_and_password_only(self):
+        User.objects.create_user(
+            username="admin-preview", password="old-preview-password", role=User.Role.PATIENT,
+            is_active=False, totp_confirmed=True, totp_secret_encrypted="old-secret",
+        )
+        call_command("setup_preview_accounts", password="stable-preview-password")
+        call_command("setup_preview_accounts", password="stable-preview-password")
+
+        expected_roles = {
+            "admin-preview": User.Role.ADMIN,
+            "therapist-preview": User.Role.REVIEWER,
+            "patient-preview": User.Role.PATIENT,
+        }
+        self.assertEqual(User.objects.filter(username__in=expected_roles).count(), 3)
+        for username, role in expected_roles.items():
+            account = User.objects.get(username=username)
+            self.assertEqual(account.role, role)
+            self.assertTrue(account.is_active)
+            self.assertTrue(account.check_password("stable-preview-password"))
+            self.assertFalse(account.totp_confirmed)
+            self.assertEqual(account.totp_secret_encrypted, "")
+
+    @override_settings(DEBUG=False)
+    def test_preview_account_setup_refuses_to_run_outside_debug(self):
+        with self.assertRaises(CommandError):
+            call_command("setup_preview_accounts", password="stable-preview-password")
 
     def test_reviewer_metadata_is_private(self):
         card = self.submitted(); other = User.objects.create_user(username="other", password="a-long-test-password", role=User.Role.REVIEWER)

@@ -222,8 +222,13 @@ details summary { color: #fff; }
   color: var(--emotion);
 }
 .emotion:has(input:checked) .face { border-color: var(--emotion); background: color-mix(in srgb, var(--emotion), #020202 76%); box-shadow: inset 0 0 0 5px #030303, 0 0 22px color-mix(in srgb, var(--emotion), transparent 35%); color: var(--emotion); text-shadow: 0 0 12px var(--emotion); filter: saturate(1.35) brightness(1.14); transform: translateY(-3px) scale(1.06); }
-.scale span { border: 1px solid #777; background: #020202; }
-.scale input:checked + span { background: #fff; color: #000; border-color: #fff; box-shadow: 0 0 12px #fff8; }
+.rating { border-top-color: color-mix(in srgb, var(--emotion, #777), #333 65%); }
+.rating h3 { color: var(--emotion, #fff); text-shadow: 0 0 10px color-mix(in srgb, var(--emotion, #fff), transparent 55%); }
+.rating .scale span { border: 1px solid color-mix(in srgb, var(--emotion, #777), #555 62%); background: color-mix(in srgb, var(--emotion, #fff), #020202 94%); color: color-mix(in srgb, var(--emotion, #fff), #aaa 45%); }
+.rating .scale input:focus-visible + span { outline: 2px solid var(--emotion, #fff); outline-offset: 3px; }
+.rating .scale input:checked + span { background: var(--emotion, #fff); color: #000; border-color: var(--emotion, #fff); box-shadow: 0 0 16px color-mix(in srgb, var(--emotion, #fff), transparent 28%); font-weight: 900; }
+.rating > input { border-left-color: color-mix(in srgb, var(--emotion, #fff), #555 55%); }
+.rating > input:focus { border-color: var(--emotion, #fff); box-shadow: 0 0 0 3px color-mix(in srgb, var(--emotion, #fff), transparent 82%); }
 
 .signal-summary { background: #030303; border: 2px solid #fff; border-top-width: 8px; box-shadow: 8px 8px 0 #222; }
 .signal-stat + .signal-stat { border-color: #555; }
@@ -326,6 +331,8 @@ details summary { color: #fff; }
 .login::after { content: "AUTHORIZED PERSONNEL ONLY"; display: block; border-top: 1px solid #555; margin-top: 1.5rem; padding-top: 1rem; color: #666; font-size: .58rem; letter-spacing: .16em; }
 .secret { border: 2px dashed #fff; color: #fff; background: #000; }
 footer { background: #000; border-top: 4px solid #fff; color: #777; letter-spacing: .14em; }
+.nav-icon, .patient-switcher-icon, .patient-switcher-mobile-name, .mobile-info-bar, .mobile-disconnect-form { display: none; }
+.nav-item[aria-current="page"] { color: #fff; text-shadow: 0 0 8px #fff; }
 
 @media (max-width: 720px) {
   body > header { height: auto; min-height: 64px; padding-block: .75rem; align-items: flex-start; }
@@ -434,10 +441,66 @@ footer { background: #000; border-top: 4px solid #fff; color: #777; letter-spaci
 .patient-switcher select:hover, .patient-switcher select:focus { border-color: #fff; box-shadow: 0 0 10px #ffffff45; }
 @media(max-width:720px){.patient-switcher label>span{display:none}.patient-switcher select{min-width:105px;max-width:130px}}
 
+/* Compact identity selector shared by desktop and mobile. The transparent native
+   select preserves platform pickers while the visible token stays consistent. */
+.patient-switcher label {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  min-width: 138px;
+  min-height: 36px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid #777;
+  background: #020202;
+  box-shadow: 3px 3px 0 #222;
+}
+.patient-switcher .patient-switcher-label { display: none; }
+.patient-switcher .patient-switcher-icon {
+  display: grid;
+  place-items: center;
+  min-height: 34px;
+  color: #fff;
+  font: 900 1rem/1 ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+.patient-switcher .patient-switcher-mobile-name {
+  display: block;
+  min-width: 0;
+  padding: .1rem .35rem .1rem 0;
+  overflow: hidden;
+  color: #ddd;
+  font: 700 .68rem/1.2 ui-monospace, "SFMono-Regular", Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.patient-switcher select {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 34px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.patient-switcher label:hover,
+.patient-switcher label:focus-within { border-color: #fff; box-shadow: 3px 3px 0 #555, 0 0 10px #ffffff35; }
+.disconnect-form .disconnect-button .nav-icon {
+  display: grid;
+  place-items: center;
+  min-width: 32px;
+  min-height: 32px;
+  color: #fff;
+  font: 400 1.25rem/1 system-ui, sans-serif;
+}
+.disconnect-form .disconnect-button .nav-label { display: none; }
+
 /* Versioned prompt controls */
-.control-tabs { position: sticky; top: 70px; z-index: 8; display: flex; gap: 0; margin: -1rem 0 2rem; overflow-x: auto; border: 2px solid #fff; background: #000; box-shadow: 7px 7px 0 #242424; scrollbar-width: thin; }
-.control-tabs a { flex: 1; min-width: max-content; padding: 1rem 1.15rem; border-right: 1px solid #444; color: #777; font-size: .65rem; font-weight: 800; letter-spacing: .1em; text-align: center; }
-.control-tabs a:last-child { border-right: 0; }
+.control-tabs { position: sticky; top: 70px; z-index: 8; display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 1px; margin: -1rem 0 2rem; overflow: visible; border: 2px solid #fff; background: #555; box-shadow: 7px 7px 0 #242424; }
+.control-tabs a { display: grid; place-items: center; min-width: 0; min-height: 50px; padding: .85rem .75rem; border: 0; background: #000; color: #777; font-size: .65rem; font-weight: 800; letter-spacing: .1em; text-align: center; }
 .control-tabs a:hover { background: #111; color: #fff; }
 .control-tabs a[aria-selected="true"] { background: #fff; color: #000; box-shadow: inset 0 -5px 0 #555; }
 .control-tab-panel { min-height: 320px; outline: none; }
@@ -736,3 +799,608 @@ th[aria-sort="ascending"] .sort-heading i, th[aria-sort="descending"] .sort-head
 @media(max-width:620px){.activity-board>header{align-items:flex-start;flex-direction:column}.activity-item{grid-template-columns:50px minmax(0,1fr);gap:.75rem;padding-inline:.8rem}.activity-item>i{display:none}.activity-target{display:inline-block;margin-top:.2rem;white-space:normal}}
 @media(max-width:800px){.weather-map-controls{justify-items:start;max-width:none}.weather-map-controls>p{text-align:left}}
 @media(max-width:650px){.form-builder-heading,.form-preview-label{align-items:start;flex-direction:column}.form-preview-label>p{text-align:left}.form-state{align-items:flex-start;flex-direction:column}.prompt-list>li{grid-template-columns:38px 1fr}.prompt-actions{grid-column:2;padding:0 0 .75rem}.prompt-info{padding-top:.75rem}.publish-bar,.publish-bar>div{align-items:stretch;flex-direction:column}.publish-bar button{width:100%}.preview-intensity-list{grid-template-columns:1fr}.preview-actions{align-items:stretch;flex-direction:column}.preview-actions button{width:100%}}
+
+/* Phone usability layer: preserve the desktop composition while keeping type and
+   controls comfortable at narrow widths. */
+@media (max-width: 720px) {
+  html { font-size: 16px; }
+  body { line-height: 1.5; overflow-wrap: anywhere; }
+  body > header {
+    gap: .75rem;
+    padding: .7rem .75rem;
+  }
+  body > header nav {
+    gap: .45rem .8rem;
+    min-width: 0;
+  }
+  body > header nav a,
+  body > header nav .link { font-size: .75rem; line-height: 1.25; }
+  .brand { flex: 0 0 auto; font-size: 1rem; }
+  main {
+    width: min(100% - 1rem, 1180px);
+    padding: 1.5rem 0 4rem;
+  }
+  .hero { margin: .5rem 0 1.5rem; }
+  .hero h1 { font-size: clamp(2rem, 10vw, 2.75rem); line-height: .92; }
+  .hero > p:not(.eyebrow) { margin: .55rem 0 0; font-size: .82rem; line-height: 1.45; }
+  .review-hero,
+  .signals-hero {
+    gap: .65rem;
+    margin: .25rem 0 1.25rem;
+  }
+  .review-hero h1,
+  .signals-hero h1 {
+    margin-top: .25rem;
+    font-size: clamp(2.25rem, 11vw, 3rem);
+    line-height: .84;
+  }
+  .review-hero > p,
+  .signals-intro {
+    margin: 0;
+    padding-left: .8rem;
+    font-size: .82rem;
+    line-height: 1.45;
+  }
+  .eyebrow { font-size: .75rem; line-height: 1.45; }
+  p, li, dd { line-height: 1.6; }
+  small,
+  .muted,
+  .section-heading p:not(.eyebrow),
+  .preview-step > p,
+  .form-preview-label > p { font-size: .75rem; line-height: 1.55; }
+  .panel { padding: 1rem; margin-bottom: 1rem; }
+  button:not(.link),
+  .button { min-height: 44px; font-size: .75rem; }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  textarea,
+  select { font-size: 1rem; }
+  form label { font-size: .75rem; line-height: 1.45; }
+  .scale { justify-content: space-between; gap: .35rem; }
+  .scale label { flex: 1; margin-block: .5rem; }
+  .scale span { width: 100%; min-width: 44px; min-height: 44px; }
+  .emotion-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .emotion { min-height: 96px; padding: .85rem .5rem; }
+  .section-heading { margin-bottom: 1rem; }
+  .section-heading h2 { font-size: 1.65rem; }
+  .table-scroll,
+  .account-registry,
+  .card-calendar,
+  .weather-scroll,
+  .audit-grid-scroll,
+  .control-tabs {
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .control-tabs {
+    position: static;
+    margin: 0 0 1rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+  }
+  .control-tabs a {
+    min-height: 40px;
+    padding: .55rem .35rem;
+    font-size: .62rem;
+    letter-spacing: .06em;
+  }
+  .view-tabs { overflow-x: auto; }
+  .view-tabs {
+    width: max-content;
+    max-width: 100%;
+    margin-bottom: 1rem;
+  }
+  .view-tabs a {
+    min-height: 38px;
+    padding: .5rem .7rem;
+    font-size: .62rem;
+    letter-spacing: .07em;
+    white-space: nowrap;
+  }
+  .review-toolbar {
+    display: flex;
+    align-items: center;
+    flex-direction: row;
+    gap: .35rem;
+    margin-bottom: .75rem;
+    overflow-x: auto;
+  }
+  .status-tabs { flex: 0 0 auto; }
+  .status-tabs a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 38px;
+    padding: .45rem .55rem;
+    font-size: .6rem;
+    letter-spacing: .05em;
+    white-space: nowrap;
+  }
+  .status-tabs b {
+    min-width: 1.1rem;
+    height: 1.1rem;
+    margin-left: .25rem;
+    padding-inline: .2rem;
+    font-size: .55rem;
+  }
+  .review-toolbar form {
+    flex: 0 0 auto;
+    align-self: center;
+    margin: 0 0 0 auto;
+  }
+  .review-toolbar label {
+    display: flex;
+    align-items: center;
+    gap: .3rem;
+    margin: 0;
+    font-size: .55rem;
+  }
+  .review-toolbar select {
+    width: 94px;
+    min-height: 38px;
+    margin: 0;
+    padding: .35rem 1.35rem .35rem .4rem;
+    background-position: calc(100% - 10px) 50%, calc(100% - 5px) 50%;
+    font-size: .62rem;
+  }
+  .calendar-header,
+  .calendar-grid,
+  .calendar-note { min-width: 660px; }
+  .calendar-grid { grid-template-columns: repeat(7, minmax(90px, 1fr)); }
+  .calendar-day { min-height: 112px; }
+  .action-modal {
+    width: calc(100% - 1rem);
+    max-height: calc(100dvh - 1rem);
+    overflow-y: auto;
+  }
+  .action-modal > :not(.modal-heading) { margin-inline: 1rem; }
+  .action-modal dl { grid-template-columns: 105px minmax(0, 1fr); }
+  .modal-heading { position: sticky; top: 0; z-index: 2; }
+  .modal-heading button { min-width: 44px; min-height: 44px; }
+  .audit-console > header,
+  .audit-console > footer,
+  .audit-line { font-size: .7rem; }
+  .activity-copy p { font-size: .85rem; }
+  .account-registry > header,
+  .account-row { font-size: .72rem; }
+  .maintenance-actions button { min-height: 36px; font-size: .68rem; }
+  footer { font-size: .7rem; line-height: 1.55; }
+}
+
+@media (max-width: 520px) {
+  body > header { align-items: stretch; flex-direction: column; }
+  body > header nav { justify-content: space-between; width: 100%; }
+  body > header nav form { flex: 0 0 auto; }
+  .patient-switcher { order: 2; width: 100%; }
+  .patient-switcher label,
+  .patient-switcher select { width: 100%; max-width: none; }
+  .actions,
+  .modal-actions { align-items: stretch; flex-direction: column; }
+  .actions button,
+  .modal-actions button,
+  .modal-actions form { width: 100%; }
+  .review-card { grid-template-columns: 72px minmax(0, 1fr); gap: .8rem; }
+  .review-card-date { padding-inline: .75rem; }
+  .review-emotions { gap: .65rem; }
+  .review-emotion { min-width: 60px; }
+  .login-minimal form { padding: 1rem; }
+  .login-brand { margin-bottom: 1.5rem; font-size: clamp(2.5rem, 15vw, 3.5rem); }
+  .file-inventory li { grid-template-columns: minmax(0, 1fr); gap: .35rem; }
+}
+
+/* Mobile application shell and compact data views. */
+@media (max-width: 720px) {
+  body:not(.login-screen) {
+    padding-top: calc(54px + env(safe-area-inset-top));
+    padding-bottom: calc(68px + env(safe-area-inset-bottom));
+  }
+  .mobile-info-bar {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 91;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .55rem;
+    min-height: calc(54px + env(safe-area-inset-top));
+    padding: calc(.45rem + env(safe-area-inset-top)) .55rem .45rem .8rem;
+    border-bottom: 1px solid #444;
+    background: #000f;
+    box-shadow: 0 7px 20px #0009;
+    backdrop-filter: blur(12px);
+  }
+  .mobile-info-bar > div {
+    display: grid;
+    min-width: 0;
+    text-align: right;
+  }
+  .mobile-page-name {
+    min-width: 0;
+    margin-right: auto;
+    overflow: hidden;
+    color: #fff;
+    font: 900 .78rem/1.2 Arial, sans-serif;
+    letter-spacing: .11em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-disconnect-form {
+    display: block;
+    flex: 0 0 48px;
+    width: 48px;
+    margin: 0;
+  }
+  .mobile-disconnect-button {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    min-height: 46px;
+    padding: 0;
+    border: 1px solid #444;
+    border-radius: 0;
+    background: #090909;
+  }
+  .mobile-disconnect-button span {
+    color: #fff;
+    font: 400 1.25rem/1 system-ui, sans-serif;
+  }
+  .mobile-info-bar small {
+    color: #666;
+    font-size: .55rem;
+    line-height: 1.2;
+    letter-spacing: .1em;
+  }
+  .mobile-info-bar b {
+    overflow: hidden;
+    color: #ddd;
+    font-size: .72rem;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  body:not(.login-screen) > header {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 90;
+    display: block;
+    min-height: 0;
+    padding: .45rem .55rem calc(.45rem + env(safe-area-inset-bottom));
+    border-top: 2px solid #fff;
+    border-bottom: 0;
+    background: #000f;
+    box-shadow: 0 -8px 24px #000b;
+    backdrop-filter: blur(12px);
+  }
+  body:not(.login-screen) > header .brand { display: none; }
+  body:not(.login-screen) > header nav {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: center;
+    justify-content: space-around;
+    gap: .25rem;
+    width: 100%;
+  }
+  body:not(.login-screen) > header nav > a,
+  body:not(.login-screen) > header nav > form:not(.patient-switcher) {
+    flex: 1 1 0;
+    min-width: 0;
+    text-align: center;
+  }
+  body:not(.login-screen) > header nav > a,
+  body:not(.login-screen) > header nav .link {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    min-height: 46px;
+    padding: .35rem .2rem;
+    font-size: .68rem;
+    letter-spacing: .04em;
+  }
+  body:not(.login-screen) > header .nav-label { display: none; }
+  body:not(.login-screen) > header .nav-icon {
+    display: grid;
+    place-items: center;
+    min-width: 30px;
+    min-height: 30px;
+    color: #fff;
+    font: 400 1.55rem/1 system-ui, sans-serif;
+  }
+  body:not(.login-screen) > header .nav-item {
+    flex: 1 1 64px;
+    width: auto;
+    max-width: none;
+    min-height: 46px;
+    border: 0;
+    border-left: 1px solid #292929;
+    border-radius: 0;
+    background: transparent;
+  }
+  body:not(.login-screen) > header .nav-item[aria-current="page"] {
+    background: transparent;
+    box-shadow: none;
+    text-shadow: none;
+  }
+  body:not(.login-screen) > header .nav-item[aria-current="page"]::before { display: none; }
+  body:not(.login-screen) > header .nav-item[aria-current="page"] .nav-icon { color: #fff; text-shadow: none; }
+  body:not(.login-screen) > header .disconnect-form {
+    display: none;
+  }
+  body:not(.login-screen) > header .disconnect-button {
+    width: 48px;
+    min-height: 46px;
+    padding: 0;
+    border: 1px solid #444;
+    background: #090909;
+  }
+  body:not(.login-screen) > header .disconnect-button .nav-icon { font-size: 1.25rem; }
+  body:not(.login-screen) > header .nav-item .nav-icon { font-size: 1.7rem; }
+  body:not(.login-screen) > header .nav-icon-signal {
+    position: relative;
+    width: 26px;
+    min-width: 26px;
+    height: 20px;
+    min-height: 20px;
+    border: 2px solid currentColor;
+    background: #000;
+  }
+  body:not(.login-screen) > header .nav-icon-signal::before {
+    content: "";
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 4px;
+    height: 4px;
+    background: currentColor;
+    box-shadow: -6px 0 0 #000, -9px 0 0 currentColor;
+  }
+  body:not(.login-screen) > header .nav-icon-signal::after {
+    content: "";
+    position: absolute;
+    inset: 9px 3px 3px;
+    background: currentColor;
+    clip-path: polygon(0 60%, 18% 60%, 30% 0, 45% 100%, 61% 28%, 73% 68%, 100% 68%, 100% 100%, 0 100%);
+  }
+  body:not(.login-screen) > header .nav-icon-update {
+    width: 25px;
+    min-width: 25px;
+    height: 21px;
+    min-height: 21px;
+    border: 2px solid currentColor;
+    font: 900 1.25rem/.7 ui-monospace, monospace;
+  }
+  body:not(.login-screen) > header .nav-icon-tools {
+    width: 27px;
+    min-width: 27px;
+    height: 27px;
+    min-height: 27px;
+  }
+  body:not(.login-screen) > header .nav-icon-tools svg {
+    display: block;
+    width: 27px;
+    height: 27px;
+    fill: currentColor;
+  }
+  .nav-updates { order: 1; }
+  .nav-control { order: 2; }
+  body:not(.login-screen) > header .nav-icon-card {
+    position: relative;
+    z-index: 0;
+    width: 24px;
+    min-width: 24px;
+    height: 18px;
+    min-height: 18px;
+    margin-top: 3px;
+    border: 2px solid currentColor;
+    background: #000;
+  }
+  body:not(.login-screen) > header .nav-icon-card::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: -6px -6px 4px 4px;
+    border: 2px solid currentColor;
+    opacity: .55;
+  }
+  body:not(.login-screen) > header .nav-icon-card::after {
+    content: "";
+    position: absolute;
+    inset: 4px 4px auto;
+    height: 2px;
+    background: currentColor;
+    box-shadow: 0 5px 0 currentColor;
+  }
+  .patient-switcher {
+    order: 1;
+    flex: 0 1 138px;
+    width: auto;
+    min-width: 0;
+    margin-right: 1rem;
+  }
+  .patient-switcher label {
+    position: relative;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    align-items: center;
+    width: 100%;
+    min-height: 36px;
+    margin: 0;
+    border: 1px solid #777;
+    background: #020202;
+    box-shadow: 3px 3px 0 #222;
+  }
+  .patient-switcher .patient-switcher-label { display: none; }
+  .patient-switcher .patient-switcher-icon {
+    display: grid;
+    place-items: center;
+    min-height: 34px;
+    color: #fff;
+    font: 900 1rem/1 ui-monospace, "SFMono-Regular", Consolas, monospace;
+  }
+  .patient-switcher .patient-switcher-mobile-name {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    min-height: 34px;
+    padding: .1rem .35rem .1rem 0;
+    overflow: hidden;
+    color: #ddd;
+    font: 700 .68rem/1.2 ui-monospace, "SFMono-Regular", Consolas, monospace;
+    letter-spacing: -.02em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .patient-switcher select {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    max-width: none;
+    min-height: 34px;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .patient-switcher + .nav-item { order: 2; }
+  .patient-switcher + .nav-item + .nav-item { order: 3; }
+  .nav-archive { order: 1; }
+  .nav-today {
+    order: 2;
+    flex: 0 0 58px !important;
+    width: 58px !important;
+    max-width: 58px !important;
+    min-height: 50px !important;
+    margin-inline: .5rem;
+    border: 2px solid #fff !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    box-shadow: 5px 5px 0 #333, 0 0 18px #ffffff45 !important;
+    transform: none;
+  }
+  .nav-today .nav-icon {
+    color: #000 !important;
+    font-size: 2rem !important;
+    font-weight: 500 !important;
+  }
+  .nav-today[aria-current="page"] { box-shadow: 5px 5px 0 #555, 0 0 24px #ffffff70 !important; }
+  .nav-signals { order: 3; }
+  .actions { position: static; bottom: auto; padding: 1rem 0 0; background: none; }
+
+  /* A phone-native month overview: seven compact columns with tappable event dots. */
+  .card-calendar { padding: .65rem; overflow: visible; border-left-width: 4px; }
+  .calendar-header {
+    min-width: 0;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    padding-bottom: .75rem;
+  }
+  .calendar-header .eyebrow { display: none; }
+  .calendar-header h2 { font-size: clamp(1.25rem, 6vw, 1.7rem); }
+  .calendar-header a { width: 44px; height: 44px; }
+  .calendar-grid {
+    min-width: 0;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    border-left: 0;
+  }
+  .calendar-weekday {
+    padding: .45rem 0;
+    border-right: 0;
+    background: transparent;
+    color: #888;
+    font-size: .7rem;
+  }
+  .calendar-day {
+    min-width: 0;
+    min-height: 64px;
+    padding: .3rem;
+    border: 0;
+    border-top: 1px solid #292929;
+    background: transparent;
+    text-align: center;
+  }
+  .calendar-day > time {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    margin: 0 auto;
+    font-size: .75rem;
+  }
+  .calendar-day.is-today > time {
+    width: 28px;
+    height: 28px;
+    margin: 0 auto;
+    border: 0;
+    border-radius: 50%;
+    background: #fff;
+    color: #000;
+  }
+  .emotion-stamp {
+    position: static;
+    transform: none;
+    margin: .15rem auto 0;
+    width: 30px;
+    min-height: 30px;
+  }
+  .emotion-stamp > span {
+    width: 26px;
+    height: 26px;
+    border-width: 2px;
+    box-shadow: 0 0 8px color-mix(in srgb, var(--emotion), transparent 50%);
+    font-size: .66rem;
+  }
+  .emotion-stamp > b { display: none; }
+  .emotion-stamp.is-unread::after { right: -1px; top: 0; width: 6px; height: 6px; }
+  .calendar-note {
+    min-width: 0;
+    justify-content: flex-start;
+    margin: .75rem .25rem 0;
+    font-size: .7rem;
+  }
+  .calendar-note span { margin-left: 0; }
+
+  /* Keep longitudinal data readable with a compact, touch-scrollable timeline. */
+  .weather-panel { padding-inline: .65rem; }
+  .weather-key { justify-content: flex-start; overflow-x: auto; }
+  .weather-key > span { display: none; }
+  .weather-key i { flex: 0 0 auto; }
+  .weather-load-key { white-space: nowrap; }
+  .weather-map {
+    grid-template-columns: 88px repeat(var(--days), 58px);
+    min-width: calc(88px + var(--days) * 58px);
+  }
+  .weather-corner,
+  .weather-date { min-height: 54px; padding: .4rem; }
+  .weather-label,
+  .weather-cell { min-height: 58px; padding: .35rem; }
+  .weather-label { gap: .35rem; font-size: .7rem; }
+  .weather-label i { font-size: 1rem; }
+  .weather-date b { font-size: .68rem; }
+  .weather-date small { font-size: .6rem; }
+  .weather-date em { font-size: .5rem; }
+  .weather-mark { width: 36px; height: 36px; font-size: .75rem; }
+  .weather-graph-scroll {
+    overflow-x: auto;
+    scroll-snap-type: inline proximity;
+    -webkit-overflow-scrolling: touch;
+  }
+  .weather-graph { min-width: 320px; }
+  .weather-graph-legend { gap: .5rem .75rem; }
+  .weather-graph-legend span { font-size: .7rem; }
+  .weather-graph-note { font-size: .65rem; text-align: left; }
+  .weather-view-switch { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .weather-view-switch button { width: 100%; }
+}
+
+@media (hover: none), (pointer: coarse) {
+  a, button, label, select, summary { touch-action: manipulation; }
+  button:not(.link):hover,
+  button.primary:hover,
+  .review-card:hover,
+  .card-row:hover,
+  .emotion-stamp:hover { transform: none; box-shadow: none; }
+  button:not(.link):active,
+  a:active { filter: brightness(1.35); }
+  .integrity-help { width: 32px; height: 32px; }
+  .account-actions button,
+  .maintenance-actions button,
+  .prompt-actions button { min-height: 44px; }
+}
