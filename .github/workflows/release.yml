@@ -1,0 +1,93 @@
+name: Release JOURNALMAX
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python manage.py test
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=stable
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            JOURNALMAX_VERSION=${{ steps.version.outputs.value }}
+            VCS_REF=${{ github.sha }}
+      - uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Create machine-readable release manifest
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+          IMAGE: ghcr.io/${{ github.repository }}
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        run: |
+          jq -n \
+            --arg version "$VERSION" \
+            --arg image "$IMAGE" \
+            --arg digest "$DIGEST" \
+            '{schema_version:1, version:$version, image:$image, digest:$digest, database_backup_required:true, card_volume_schema:1}' > journalmax-release.json
+      - name: Publish stable GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" journalmax-release.json compose.production.yaml .env.production.example --verify-tag --generate-notes --title "JOURNALMAX $GITHUB_REF_NAME"

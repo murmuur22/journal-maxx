@@ -1,15 +1,12 @@
-# NULL//DIARY
+# JOURNALMAX
 
 A private, self-hosted diary-card service with separate patient, therapist, and content-blind administrator experiences. Submitted cards are ordinary Markdown files on a configurable data volume; operational metadata lives in a local SQLite volume.
 
 ## Deploy
 
-1. Mount the encrypted SMB3 NAS share on the Docker host. Do not place SQLite on SMB.
-2. Copy `.env.example` to `.env`, generate a long random secret, and set `DIARY_HOST_CARD_PATH` to a dedicated directory on that host mount.
-3. Start the container: `docker compose up -d --build`.
-4. Bootstrap the administrator:
-   `docker compose exec diary python manage.py bootstrap_diary --username operator`
-5. Sign into `/control/` with the administrator account and generate separate single-use invitation links for the patient and therapist. The therapist enrolls TOTP while accepting the invitation and receives one-time recovery codes.
+Production consumes versioned images from GHCR while its configuration, SQLite state, and SMB card archive remain on the VM. Follow the complete [production VM runbook](docs/production-vm.md).
+
+Development continues to use the local build in `compose.yaml`. Publishing a semantic version tag runs the test suite, builds and attests a container image, and creates a GitHub Release. Ordinary pushes to `main` do not update production.
 
 The app intentionally serves HTTP. Terminate HTTPS at your existing reverse proxy. Publish only `/login/`, `/logout/`, `/invite/`, `/review/`, `/static/`, and `/health/live` on the therapist hostname. Keep `/journal/`, `/control/`, and `/api/` behind the VPN. Proxy filtering is defense in depth; the app also checks roles for every route.
 
@@ -17,6 +14,7 @@ The app intentionally serves HTTP. Terminate HTTPS at your existing reverse prox
 
 - `/var/lib/diary-state`: local SQLite state; back up with a SQLite-consistent snapshot.
 - `/data/cards`: NAS-backed Markdown and attachments; protect it with encrypted storage, encrypted SMB transport, least-privilege permissions, snapshots, and tested restores.
+- `.journalmax-volume.json` identifies a recognized archive. When marker enforcement is enabled, Journalmax fails closed if the mount disappears, the marker is invalid, or the configured volume ID does not match.
 - Card folders are date-prefixed and immutable after submission. Addenda are separate files.
 - Maintenance deletion moves a complete folder to `/data/cards/.quarantine` for seven days. The admin can restore it from the control plane. A scheduler/management command for automatic final purge should be enabled only after backup retention is documented.
 - Run `python manage.py purge_quarantine` daily from the host scheduler to complete expired maintenance deletions.

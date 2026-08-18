@@ -2,10 +2,13 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+JOURNALMAX_VERSION = os.environ.get("JOURNALMAX_VERSION", (BASE_DIR / "VERSION").read_text(encoding="utf-8").strip())
 SECRET_KEY = os.environ.get("DIARY_SECRET_KEY", "development-only-change-me")
 DEBUG = os.environ.get("DIARY_DEBUG", "0") == "1"
+DEV_PASSWORD_ONLY_USERS = {username.strip() for username in os.environ.get("DIARY_DEV_PASSWORD_ONLY_USERS", "").split(",") if username.strip()} if DEBUG else set()
 ALLOWED_HOSTS = [x for x in os.environ.get("DIARY_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if x]
 CSRF_TRUSTED_ORIGINS = [x for x in os.environ.get("DIARY_CSRF_TRUSTED_ORIGINS", "").split(",") if x]
+CSRF_FAILURE_VIEW = "core.views.csrf_failure"
 
 INSTALLED_APPS = [
     "django.contrib.auth", "django.contrib.contenttypes", "django.contrib.sessions",
@@ -23,13 +26,16 @@ TEMPLATES = [{
     "DIRS": [BASE_DIR / "templates"], "APP_DIRS": True,
     "OPTIONS": {"context_processors": [
         "django.template.context_processors.request", "django.contrib.auth.context_processors.auth",
-        "django.contrib.messages.context_processors.messages",
+        "django.contrib.messages.context_processors.messages", "core.context_processors.reviewer_patient",
     ]},
 }]
 WSGI_APPLICATION = "diary.wsgi.application"
 STATE_ROOT = Path(os.environ.get("DIARY_STATE_ROOT", BASE_DIR / ".state"))
 STATE_ROOT.mkdir(parents=True, exist_ok=True)
 CARD_ROOT = Path(os.environ.get("DIARY_CARD_ROOT", BASE_DIR / ".cards"))
+CARD_VOLUME_MARKER = ".journalmax-volume.json"
+CARD_VOLUME_REQUIRE_MARKER = os.environ.get("DIARY_CARD_VOLUME_REQUIRE_MARKER", "1" if "DIARY_CARD_ROOT" in os.environ else "0") == "1"
+CARD_VOLUME_ID = os.environ.get("DIARY_CARD_VOLUME_ID", "").strip()
 DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": STATE_ROOT / "diary.sqlite3", "OPTIONS": {"timeout": 20}}}
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.filebased.FileBasedCache", "LOCATION": STATE_ROOT / "cache"}}
 AUTH_USER_MODEL = "core.User"

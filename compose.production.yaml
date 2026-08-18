@@ -1,0 +1,30 @@
+services:
+  diary:
+    image: ${JOURNALMAX_IMAGE:?Set JOURNALMAX_IMAGE}:${JOURNALMAX_RELEASE:?Set JOURNALMAX_RELEASE}
+    restart: unless-stopped
+    init: true
+    env_file: ${JOURNALMAX_ENV_FILE:-.env.production}
+    ports:
+      - "${JOURNALMAX_BIND_ADDRESS:-127.0.0.1}:${JOURNALMAX_HOST_PORT:-8800}:8000"
+    volumes:
+      - type: bind
+        source: ${DIARY_HOST_STATE_PATH:?Set DIARY_HOST_STATE_PATH}
+        target: /var/lib/diary-state
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${DIARY_HOST_CARD_PATH:?Set DIARY_HOST_CARD_PATH}
+        target: /data/cards
+        bind:
+          create_host_path: false
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 30s

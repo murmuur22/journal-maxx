@@ -11,4 +11,5 @@ urlpatterns = [
     path("control/", include("core.control_urls")),
     path("api/v1/", include("core.api_urls")),
     path("health/live", views.liveness, name="liveness"),
+    path("health/ready", views.readiness, name="readiness"),
 ]
