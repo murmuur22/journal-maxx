@@ -55,7 +55,7 @@ The SMB account should be restricted to this share. Enable NAS snapshots and a s
 
 ## 3. Install the release and updater
 
-The host updater is intentionally separate from the web container. It runs as root, exposes only three fixed operations over a group-owned Unix socket, and is the only component allowed to control Docker or copy SQLite. Install GitHub CLI (`gh`) as well as Docker; the updater uses `gh attestation verify` to reject an image that was not built from the requested version tag and attested by this repository's release workflow on a GitHub-hosted runner.
+The host updater is intentionally separate from the web container. It runs as root, exposes only three fixed operations over a group-owned Unix socket, and is the only component allowed to control Docker or copy SQLite. Install a current GitHub CLI (`gh`) from GitHub's official package repository as well as Docker; `gh attestation verify --help` must succeed. The updater rejects an image that was not built from the requested version tag and attested by this repository's release workflow on a GitHub-hosted runner.
 
 Download these assets from the selected GitHub Release:
 
@@ -77,6 +77,10 @@ sudo install -d -o root -g root -m 0755 /etc/journalmax
 sudo install -o root -g root -m 0600 updater.json.example /etc/journalmax/updater.json
 sudo install -o root -g root -m 0644 journalmax-updater.service /etc/systemd/system/journalmax-updater.service
 sudo install -o root -g root -m 0644 journalmax-updater.tmpfiles.conf /etc/tmpfiles.d/journalmax-updater.conf
+sudo install -o root -g root -m 0600 /dev/null /etc/journalmax/updater.env
+UPDATER_GITHUB_TOKEN=$(gh auth token)
+sudo sh -c 'printf "GH_TOKEN=%s\n" "$1" > /etc/journalmax/updater.env' sh "$UPDATER_GITHUB_TOKEN"
+unset UPDATER_GITHUB_TOKEN
 sudoedit /opt/journalmax/.env.production
 sudoedit /etc/journalmax/updater.json
 sudo systemd-tmpfiles --create /etc/tmpfiles.d/journalmax-updater.conf
@@ -184,9 +188,9 @@ curl --retry 20 --retry-delay 3 --retry-all-errors --fail \
 After the development work is reviewed, committed, and pushed, create a semantic version tag:
 
 ```bash
-git tag -a v0.2.0 -m "JOURNALMAX v0.2.0"
+git tag -a v0.2.1 -m "JOURNALMAX v0.2.1"
 git push origin main
-git push origin v0.2.0
+git push origin v0.2.1
 ```
 
 The release workflow tests the tagged commit, publishes the container and provenance attestation, then creates the GitHub Release. A normal push to `main` never updates production.

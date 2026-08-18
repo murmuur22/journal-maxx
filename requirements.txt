@@ -3,4 +3,4 @@ argon2-cffi>=23.1
 cryptography>=44
 Markdown>=3.7
 bleach>=6.2
-
+whitenoise>=6.12,<7
