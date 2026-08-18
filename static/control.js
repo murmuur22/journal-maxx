@@ -291,6 +291,7 @@
   });
 
   const updateWorkspace = document.querySelector("[data-update-workspace]");
+  const updateNav = document.querySelector("[data-update-nav]");
   if (updateWorkspace) {
     const connection = updateWorkspace.querySelector("[data-update-connection]");
     const installed = updateWorkspace.querySelector("[data-update-installed]");
@@ -325,6 +326,7 @@
         latest.textContent = `v${latestRelease.version}`;
         const currentVersion = payload.installed_version || installed.textContent.replace(/^v/, "");
         const available = typeof payload.update_available === "boolean" ? payload.update_available : newerThan(latestRelease.version, currentVersion);
+        updateNav?.classList.toggle("has-update", available);
         availability.textContent = available ? "NEW RELEASE AVAILABLE" : "CURRENT RELEASE";
         installButton.disabled = !connected || !available || activePhases.has(payload.job?.phase);
         installButton.dataset.version = latestRelease.version;
@@ -377,6 +379,17 @@
     setInterval(refreshUpdate, 4000);
   }
 
+  if (updateNav && !updateWorkspace) {
+    const csrf = document.querySelector('[name="csrfmiddlewaretoken"]')?.value;
+    if (csrf) {
+      const body = new FormData(); body.set("csrfmiddlewaretoken", csrf);
+      fetch(updateNav.dataset.checkUrl, { method: "POST", body, credentials: "same-origin", headers: { Accept: "application/json" } })
+        .then((response) => response.ok ? response.json() : null)
+        .then((payload) => updateNav.classList.toggle("has-update", Boolean(payload?.update_available)))
+        .catch(() => {});
+    }
+  }
+
   try {
     const savedPosition = sessionStorage.getItem(scrollKey);
     if (savedPosition !== null) {
@@ -390,6 +403,35 @@
   document.addEventListener("submit", async (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement) || form.method.toLowerCase() !== "post") return;
+
+    const feedbackWorkspace = form.closest("[data-feedback-admin-workspace]");
+    if (feedbackWorkspace) {
+      event.preventDefault();
+      const submitter = event.submitter;
+      if (submitter) submitter.disabled = true;
+      feedbackWorkspace.setAttribute("aria-busy", "true");
+      try {
+        const response = await fetch(form.action, {
+          method: "POST",
+          body: new FormData(form, submitter),
+          credentials: "same-origin",
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+        if (!response.ok) throw new Error(`Request failed (${response.status})`);
+        const page = new DOMParser().parseFromString(await response.text(), "text/html");
+        const replacement = page.querySelector("[data-feedback-admin-workspace]");
+        if (!replacement) throw new Error("The updated feedback queue was not returned.");
+        feedbackWorkspace.replaceWith(replacement);
+        const nextTab = page.querySelector('.control-tabs [aria-controls="feedback"]');
+        const currentTab = document.querySelector('.control-tabs [aria-controls="feedback"]');
+        if (nextTab && currentTab) currentTab.innerHTML = nextTab.innerHTML;
+      } catch (error) {
+        feedbackWorkspace.removeAttribute("aria-busy");
+        if (submitter) submitter.disabled = false;
+        window.alert(`${error.message} Please try again.`);
+      }
+      return;
+    }
 
     const builder = form.closest("[data-form-builder]");
     if (!builder) {

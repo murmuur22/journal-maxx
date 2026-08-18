@@ -12,7 +12,7 @@ from django.core.management.base import CommandError
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
-from .models import ApiToken, AuditEvent, Card, CareRelationship, Emotion, FormDefinition, Invite, ReviewerMetadata, TherapistComment, User
+from .models import ApiToken, AuditEvent, Card, CareRelationship, Emotion, FeedbackReport, FormDefinition, Invite, ReviewerMetadata, TherapistComment, User
 from .security import decrypt_secret, encrypt_secret, generate_totp_secret, totp, verify_totp
 from .services import add_addendum, card_directory, card_file_inventory, comments_filename, quarantine_card, restore_card, storage_status, submit_card, verify_card_integrity
 
@@ -47,7 +47,7 @@ class DiaryTests(TestCase):
     def test_readiness_reports_release_database_and_card_volume(self):
         response = self.client.get(reverse("readiness"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["version"], "0.3.0")
+        self.assertEqual(response.json()["version"], "0.3.1")
         self.assertEqual(response.json()["database"], "ok")
         self.assertEqual(response.json()["card_storage"], "local")
         with override_settings(CARD_VOLUME_REQUIRE_MARKER=True):
@@ -493,6 +493,56 @@ class DiaryTests(TestCase):
     def test_preview_account_setup_refuses_to_run_outside_debug(self):
         with self.assertRaises(CommandError):
             call_command("setup_preview_accounts", password="stable-preview-password")
+
+    def test_patient_and_reviewer_can_submit_feedback_for_admin_triage(self):
+        client = Client(); client.force_login(self.patient)
+        page = client.get(reverse("journal:today"))
+        self.assertContains(page, "data-feedback-open")
+        response = client.post(reverse("feedback_submit"), {
+            "kind": "bug", "subject": "Calendar tap target", "body": "The calendar control is difficult to tap.",
+            "page": "/journal/trends/", "next": reverse("journal:today"), "important": "1",
+        })
+        self.assertRedirects(response, reverse("journal:today"))
+        report = FeedbackReport.objects.get()
+        self.assertEqual(report.author, self.patient)
+        self.assertEqual(report.author_name, "patient")
+        self.assertEqual(report.kind, FeedbackReport.Kind.BUG)
+        self.assertEqual(report.subject, "Calendar tap target")
+        self.assertFalse(report.important)
+        self.assertEqual(report.page, "/journal/trends/")
+        self.assertTrue(AuditEvent.objects.filter(action="feedback.submitted", actor=self.patient).exists())
+
+        client.force_login(self.reviewer)
+        response = client.post(reverse("feedback_submit"), {"kind": "feedback", "subject": "Reviewer workflow", "body": "A reviewer note.", "next": reverse("review:list")})
+        self.assertRedirects(response, reverse("review:list"))
+        self.assertEqual(FeedbackReport.objects.count(), 2)
+
+    def test_admin_can_prioritize_archive_and_restore_feedback(self):
+        report = FeedbackReport.objects.create(author=self.patient, author_name=self.patient.username, author_role=self.patient.role, body="Please improve this interaction.")
+        client = Client(); client.force_login(self.admin)
+        dashboard = client.get(reverse("control:dashboard"))
+        self.assertContains(dashboard, "TRIAGE QUEUE")
+        self.assertContains(dashboard, report.body)
+        self.assertContains(dashboard, "data-feedback-open")
+        self.assertNotContains(dashboard, "FLAG AS IMPORTANT")
+
+        response = client.post(reverse("control:feedback_important", args=[report.id]))
+        self.assertRedirects(response, reverse("control:dashboard") + "#feedback")
+        report.refresh_from_db(); self.assertTrue(report.important)
+        response = client.post(reverse("control:feedback_archive", args=[report.id]))
+        self.assertRedirects(response, reverse("control:dashboard") + "#feedback")
+        report.refresh_from_db(); self.assertIsNotNone(report.archived_at); self.assertEqual(report.archived_by, self.admin)
+        client.post(reverse("control:feedback_archive", args=[report.id]))
+        report.refresh_from_db(); self.assertIsNone(report.archived_at); self.assertIsNone(report.archived_by)
+
+    def test_admin_can_submit_feedback_but_patient_cannot_manage_it(self):
+        report = FeedbackReport.objects.create(author=self.patient, author_name=self.patient.username, author_role=self.patient.role, body="Restricted actions.")
+        client = Client(); client.force_login(self.admin)
+        response = client.post(reverse("feedback_submit"), {"subject": "Admin idea", "body": "Admin-authored report.", "next": reverse("control:dashboard")})
+        self.assertRedirects(response, reverse("control:dashboard"))
+        self.assertTrue(FeedbackReport.objects.filter(author=self.admin, body="Admin-authored report.").exists())
+        client.force_login(self.patient)
+        self.assertEqual(client.post(reverse("control:feedback_archive", args=[report.id])).status_code, 403)
 
     def test_reviewer_metadata_is_private(self):
         card = self.submitted(); other = User.objects.create_user(username="other", password="a-long-test-password", role=User.Role.REVIEWER)

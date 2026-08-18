@@ -27,7 +27,7 @@ from django.views.decorators.cache import never_cache
 from .decorators import role_required
 from .context_processors import get_reviewer_patient
 from .forms import AddendumForm, ReviewerStatusForm, TherapistCommentForm
-from .models import AuditEvent, Card, CareRelationship, Emotion, FormDefinition, Invite, ReviewerMetadata, User
+from .models import AuditEvent, Card, CareRelationship, Emotion, FeedbackReport, FormDefinition, Invite, ReviewerMetadata, User
 from .services import add_addendum, add_therapist_comment, audit, card_directory, card_file_inventory, comments_filename, purge_card, quarantine_card, restore_card, storage_status, submit_card, verify_card_integrity
 from .security import encrypt_secret, generate_totp_secret, issue_recovery_codes, verify_privileged_credential, verify_second_factor, verify_totp
 from .updater import UpdaterUnavailable, updater_request
@@ -107,6 +107,23 @@ def accept_invite(request, token):
 def logout_view(request):
     if request.user.is_authenticated: audit(request.user, "auth.logout", request=request)
     logout(request); return redirect("login")
+
+@role_required(User.Role.PATIENT, User.Role.REVIEWER, User.Role.ADMIN)
+@require_POST
+def feedback_submit(request):
+    body = request.POST.get("body", "").strip()
+    subject = request.POST.get("subject", "").strip()
+    kind = request.POST.get("kind", FeedbackReport.Kind.FEEDBACK)
+    if kind not in FeedbackReport.Kind.values: kind = FeedbackReport.Kind.FEEDBACK
+    next_url = request.POST.get("next", "")
+    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()): next_url = reverse("home")
+    if not subject or not body:
+        messages.error(request, "Add a subject and note before sending feedback.")
+        return redirect(next_url)
+    FeedbackReport.objects.create(author=request.user, author_name=request.user.username, author_role=request.user.role, kind=kind, subject=subject[:140], body=body[:4000], page=request.POST.get("page", "")[:500])
+    audit(request.user, "feedback.submitted", metadata={"kind": kind}, request=request)
+    messages.success(request, "Feedback sent to the Journalmax administrator.")
+    return redirect(next_url)
 
 def _emotion_data(request):
     selected = set(request.POST.getlist("emotions")); result = []
@@ -466,7 +483,29 @@ def control_dashboard(request):
         else: account.delete_block = ""
     events = list(AuditEvent.objects.select_related("actor")[:100])
     emotions = list(Emotion.objects.order_by("sort_order"))
-    return render(request, "control/dashboard.html", {"journalmax_version": settings.JOURNALMAX_VERSION, "storage": storage, "counts": {"users": User.objects.count(), "cards": Card.objects.count(), "submitted": Card.objects.filter(status=Card.Status.SUBMITTED).count()}, "maintenance_cards": maintenance_cards, "events": events, "recent_activity": _recent_activity(events[:12]), "users": users, "patient_accounts": patient_accounts, "emotions": emotions, "custom_fields": custom_fields, "form_version": getattr(form_def, "version", None), "has_staged_changes": custom_fields != active_fields})
+    feedback_reports = list(FeedbackReport.objects.select_related("author", "archived_by"))
+    return render(request, "control/dashboard.html", {"journalmax_version": settings.JOURNALMAX_VERSION, "storage": storage, "counts": {"users": User.objects.count(), "cards": Card.objects.count(), "submitted": Card.objects.filter(status=Card.Status.SUBMITTED).count()}, "maintenance_cards": maintenance_cards, "events": events, "recent_activity": _recent_activity(events[:12]), "users": users, "patient_accounts": patient_accounts, "emotions": emotions, "custom_fields": custom_fields, "form_version": getattr(form_def, "version", None), "has_staged_changes": custom_fields != active_fields, "feedback_reports": feedback_reports, "active_feedback_count": sum(report.archived_at is None for report in feedback_reports)})
+
+@role_required(User.Role.ADMIN)
+@require_POST
+def control_feedback_important(request, report_id):
+    report = get_object_or_404(FeedbackReport, id=report_id)
+    report.important = not report.important
+    report.save(update_fields=["important", "updated_at"])
+    audit(request.user, "feedback.importance_updated", report.id, {"important": report.important}, request)
+    messages.success(request, "Feedback priority updated.")
+    return redirect(reverse("control:dashboard") + "#feedback")
+
+@role_required(User.Role.ADMIN)
+@require_POST
+def control_feedback_archive(request, report_id):
+    report = get_object_or_404(FeedbackReport, id=report_id)
+    report.archived_at = None if report.archived_at else timezone.now()
+    report.archived_by = None if report.archived_at is None else request.user
+    report.save(update_fields=["archived_at", "archived_by", "updated_at"])
+    audit(request.user, "feedback.archive_updated", report.id, {"archived": report.archived_at is not None}, request)
+    messages.success(request, "Feedback archive updated.")
+    return redirect(reverse("control:dashboard") + "#feedback")
 
 @role_required(User.Role.ADMIN)
 def control_updates(request):
