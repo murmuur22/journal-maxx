@@ -95,6 +95,7 @@ Set at least:
 - `JOURNALMAX_RELEASE` to the exact released version, without the leading `v`.
 - `DIARY_SECRET_KEY` to a stable random value, for example output from `openssl rand -base64 48`.
 - The real allowed host, HTTPS origin, and timezone.
+- `DIARY_SESSION_IDLE_TIMEOUT` to the inactivity window in seconds (the default is 1800, or 30 minutes).
 - `DIARY_HOST_CARD_PATH=/mnt/journalmax-cards`.
 
 Never regenerate `DIARY_SECRET_KEY` during an update.

@@ -5,6 +5,7 @@ urlpatterns = [
     path("", views.home, name="home"),
     path("login/", views.login_view, name="login"),
     path("logout/", views.logout_view, name="logout"),
+    path("session/keepalive/", views.session_keepalive, name="session_keepalive"),
     path("feedback/", views.feedback_submit, name="feedback_submit"),
     path("invite/<str:token>/", views.accept_invite, name="accept_invite"),
     path("journal/", include("core.journal_urls")),

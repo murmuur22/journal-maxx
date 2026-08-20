@@ -6,7 +6,7 @@ from core.security import encrypt_secret, generate_totp_secret, issue_recovery_c
 EMOTIONS = [
     ("joy", "Joy", "◕‿◕", "#ffd166"), ("calm", "Calm", "─‿─", "#79ffe1"),
     ("sadness", "Sadness", "╥﹏╥", "#62a8ff"), ("anger", "Anger", "ಠ益ಠ", "#ff4f64"),
-    ("fear", "Fear", "⊙﹏⊙", "#b69cff"), ("shame", "Shame", "︶︿︶", "#e78ac3"),
+    ("fear", "Fear", "⊙﹏⊙", "#b69cff"), ("shame", "Shame", "⌣_⌣", "#e78ac3"),
     ("hope", "Hope", "✦‿✦", "#a8ff60"), ("numb", "Numb", "•_•", "#9aa4b2"),
 ]
 

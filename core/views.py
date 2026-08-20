@@ -28,7 +28,7 @@ from .decorators import role_required
 from .context_processors import get_reviewer_patient
 from .forms import AddendumForm, ReviewerStatusForm, TherapistCommentForm
 from .models import AuditEvent, Card, CareRelationship, Emotion, FeedbackReport, FormDefinition, Invite, ReviewerMetadata, User
-from .services import add_addendum, add_therapist_comment, audit, card_directory, card_file_inventory, comments_filename, purge_card, quarantine_card, restore_card, storage_status, submit_card, verify_card_integrity
+from .services import add_addendum, add_card_attachments, add_therapist_comment, audit, card_directory, card_file_inventory, comments_filename, purge_card, quarantine_card, restore_card, storage_status, submit_card, verify_card_integrity
 from .security import encrypt_secret, generate_totp_secret, issue_recovery_codes, verify_privileged_credential, verify_second_factor, verify_totp
 from .updater import UpdaterUnavailable, updater_request
 
@@ -110,7 +110,14 @@ def logout_view(request):
 
 @role_required(User.Role.PATIENT, User.Role.REVIEWER, User.Role.ADMIN)
 @require_POST
+def session_keepalive(request):
+    request.session.set_expiry(settings.SESSION_IDLE_TIMEOUT)
+    return JsonResponse({"ok": True})
+
+@role_required(User.Role.PATIENT, User.Role.REVIEWER, User.Role.ADMIN)
+@require_POST
 def feedback_submit(request):
+    wants_json = "application/json" in request.headers.get("Accept", "")
     body = request.POST.get("body", "").strip()
     subject = request.POST.get("subject", "").strip()
     kind = request.POST.get("kind", FeedbackReport.Kind.FEEDBACK)
@@ -118,10 +125,12 @@ def feedback_submit(request):
     next_url = request.POST.get("next", "")
     if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()): next_url = reverse("home")
     if not subject or not body:
+        if wants_json: return JsonResponse({"ok": False, "message": "Add a subject and note before sending feedback."}, status=400)
         messages.error(request, "Add a subject and note before sending feedback.")
         return redirect(next_url)
     FeedbackReport.objects.create(author=request.user, author_name=request.user.username, author_role=request.user.role, kind=kind, subject=subject[:140], body=body[:4000], page=request.POST.get("page", "")[:500])
     audit(request.user, "feedback.submitted", metadata={"kind": kind}, request=request)
+    if wants_json: return JsonResponse({"ok": True, "message": "Feedback sent to the Journalmax administrator."})
     messages.success(request, "Feedback sent to the Journalmax administrator.")
     return redirect(next_url)
 
@@ -305,7 +314,10 @@ def card_detail(request, card_id):
         if not meta.is_read: meta.is_read = True; meta.save(update_fields=["is_read", "updated_at"])
         audit(request.user, "card.viewed", card.id, request=request)
     else: meta = None
-    return render(request, "card_detail.html", {"card": card, "rendered": rendered, "raw_mode": raw_mode, "raw_documents": raw_documents, "meta": meta, "addendum_form": AddendumForm(), "reviewer_status_form": ReviewerStatusForm(initial={"is_read": getattr(meta, "is_read", False)}), "comment_form": TherapistCommentForm()})
+    attachments = list(card.attachments.all())
+    image_attachments = [item for item in attachments if item.content_type.startswith("image/")]
+    file_attachments = [item for item in attachments if not item.content_type.startswith("image/")]
+    return render(request, "card_detail.html", {"card": card, "rendered": rendered, "raw_mode": raw_mode, "raw_documents": raw_documents, "meta": meta, "addendum_form": AddendumForm(), "reviewer_status_form": ReviewerStatusForm(initial={"is_read": getattr(meta, "is_read", False)}), "comment_form": TherapistCommentForm(), "image_attachments": image_attachments, "file_attachments": file_attachments})
 
 @role_required(User.Role.PATIENT)
 @require_POST
@@ -316,14 +328,28 @@ def card_addendum(request, card_id):
         except Exception as exc: messages.error(request, str(exc))
     return redirect("journal:detail", card_id=card.id)
 
+@role_required(User.Role.PATIENT)
+@require_POST
+def card_attachment_add(request, card_id):
+    card = _card_for_user(request.user, card_id)
+    try:
+        add_card_attachments(card, request.FILES.getlist("attachments"), request.user, request)
+        messages.success(request, "Attachment added to the submitted card.")
+    except Exception as exc: messages.error(request, str(exc))
+    return redirect("journal:detail", card_id=card.id)
+
 @role_required(User.Role.PATIENT, User.Role.REVIEWER)
 def attachment_download(request, card_id, attachment_id):
     card = _card_for_user(request.user, card_id); attachment = get_object_or_404(card.attachments, id=attachment_id)
     if not storage_status()["available"]: return HttpResponse("Card storage offline", status=503)
     path = card_directory(card) / attachment.stored_name
     if not path.is_file(): raise Http404
-    audit(request.user, "attachment.downloaded", card.id, request=request)
-    return FileResponse(path.open("rb"), as_attachment=True, filename=attachment.original_name, content_type="application/octet-stream")
+    inline_types = {"image/jpeg", "image/png", "image/webp", "application/pdf", "text/plain", "text/markdown"}
+    inline = request.GET.get("inline") == "1" and attachment.content_type in inline_types
+    audit(request.user, "attachment.viewed" if inline else "attachment.downloaded", card.id, request=request)
+    response = FileResponse(path.open("rb"), as_attachment=not inline, filename=attachment.original_name, content_type=attachment.content_type if inline else "application/octet-stream")
+    if inline: response["Content-Security-Policy"] = "sandbox; default-src 'none'"
+    return response
 
 @role_required(User.Role.REVIEWER)
 def review_list(request):
@@ -406,6 +432,7 @@ def _recent_activity(events):
         "card.viewed": "opened a diary entry",
         "card.integrity_failed": "encountered an entry integrity conflict",
         "attachment.downloaded": "downloaded an entry attachment",
+        "attachment.viewed": "viewed an entry attachment",
         "card.quarantined": "moved an entry to Recently Deleted",
         "card.restored": "restored a deleted entry",
         "card.purged": "permanently removed an expired entry",
@@ -425,7 +452,7 @@ def _recent_activity(events):
     for event in events:
         target_label = ""
         target_url = ""
-        if event.action.startswith("card.") or event.action in {"attachment.downloaded", "reviewer.status_updated", "reviewer.comment_added"}:
+        if event.action.startswith("card.") or event.action in {"attachment.downloaded", "attachment.viewed", "reviewer.status_updated", "reviewer.comment_added"}:
             card = card_by_id.get(event.target_id)
             if card:
                 target_label = f"ENTRY {card.local_date:%Y-%m-%d}"

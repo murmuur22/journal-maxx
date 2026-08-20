@@ -47,7 +47,7 @@ class DiaryTests(TestCase):
     def test_readiness_reports_release_database_and_card_volume(self):
         response = self.client.get(reverse("readiness"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["version"], "0.3.1")
+        self.assertEqual(response.json()["version"], "0.3.3")
         self.assertEqual(response.json()["database"], "ok")
         self.assertEqual(response.json()["card_storage"], "local")
         with override_settings(CARD_VOLUME_REQUIRE_MARKER=True):
@@ -512,10 +512,35 @@ class DiaryTests(TestCase):
         self.assertEqual(report.page, "/journal/trends/")
         self.assertTrue(AuditEvent.objects.filter(action="feedback.submitted", actor=self.patient).exists())
 
+        response = client.post(reverse("feedback_submit"), {
+            "kind": "feedback", "subject": "No refresh", "body": "Keep the current page state.",
+            "page": "/journal/", "next": reverse("journal:today"),
+        }, HTTP_ACCEPT="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["ok"], True)
+        self.assertEqual(FeedbackReport.objects.count(), 2)
+
         client.force_login(self.reviewer)
         response = client.post(reverse("feedback_submit"), {"kind": "feedback", "subject": "Reviewer workflow", "body": "A reviewer note.", "next": reverse("review:list")})
         self.assertRedirects(response, reverse("review:list"))
-        self.assertEqual(FeedbackReport.objects.count(), 2)
+        self.assertEqual(FeedbackReport.objects.count(), 3)
+
+    def test_authenticated_user_can_refresh_session_expiry(self):
+        client = Client(); client.force_login(self.patient)
+        response = client.post(reverse("session_keepalive"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"ok": True})
+        self.assertGreater(client.session.get_expiry_age(), 0)
+
+        anonymous = Client().post(reverse("session_keepalive"))
+        self.assertEqual(anonymous.status_code, 302)
+
+    def test_feedback_json_validation_error_does_not_redirect(self):
+        client = Client(); client.force_login(self.patient)
+        response = client.post(reverse("feedback_submit"), {"subject": "", "body": ""}, HTTP_ACCEPT="application/json")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["ok"], False)
+        self.assertEqual(FeedbackReport.objects.count(), 0)
 
     def test_admin_can_prioritize_archive_and_restore_feedback(self):
         report = FeedbackReport.objects.create(author=self.patient, author_name=self.patient.username, author_role=self.patient.role, body="Please improve this interaction.")
@@ -578,6 +603,40 @@ class DiaryTests(TestCase):
         raw_view = client.get(reverse("journal:detail", args=[card.id]) + "?view=raw")
         self.assertContains(raw_view, comments_filename(card))
         self.assertContains(raw_view, "APPEND-ONLY COMMENT LOG")
+
+    def test_patient_can_append_attachments_after_submission_and_images_render_inline(self):
+        card = self.submitted(); client = Client(); client.force_login(self.patient)
+        image = SimpleUploadedFile("after-submit.png", b"\x89PNG\r\n\x1a\nimage-payload", content_type="image/png")
+        note = SimpleUploadedFile("after-submit.md", b"# Added later", content_type="text/markdown")
+        response = client.post(reverse("journal:attachment_add", args=[card.id]), {"attachments": [image, note]})
+        self.assertRedirects(response, reverse("journal:detail", args=[card.id]))
+        card.refresh_from_db()
+        attachment = card.attachments.get(original_name="after-submit.png")
+        self.assertTrue(card.attachments.filter(original_name="after-submit.md").exists())
+        self.assertTrue((card_directory(card) / attachment.stored_name).is_file())
+        self.assertEqual(verify_card_integrity(card), "verified")
+        self.assertTrue(AuditEvent.objects.filter(action="card.attachments_added", actor=self.patient, target_id=str(card.id)).exists())
+
+        detail = client.get(reverse("journal:detail", args=[card.id]))
+        self.assertContains(detail, "attachment-masonry")
+        self.assertContains(detail, "after-submit.png")
+        self.assertContains(detail, "attachment-file-list")
+        self.assertContains(detail, "VIEW ↗")
+        inline = client.get(reverse("journal:attachment", args=[card.id, attachment.id]) + "?inline=1")
+        self.assertEqual(inline.status_code, 200)
+        self.assertEqual(inline["Content-Type"], "image/png")
+        self.assertIn("inline", inline["Content-Disposition"])
+        text_attachment = card.attachments.get(original_name="image_one.txt")
+        text_view = client.get(reverse("journal:attachment", args=[card.id, text_attachment.id]) + "?inline=1")
+        self.assertEqual(text_view["Content-Type"], "text/plain")
+        self.assertIn("inline", text_view["Content-Disposition"])
+        self.assertEqual(text_view["Content-Security-Policy"], "sandbox; default-src 'none'")
+
+    def test_only_card_owner_can_append_attachments(self):
+        card = self.submitted(); client = Client(); client.force_login(self.reviewer)
+        upload = SimpleUploadedFile("reviewer.txt", b"not allowed", content_type="text/plain")
+        self.assertEqual(client.post(reverse("journal:attachment_add", args=[card.id]), {"attachments": upload}).status_code, 403)
+        self.assertEqual(card.attachments.count(), 1)
 
     def test_patient_cannot_post_therapist_comment(self):
         card = self.submitted(); self.client.force_login(self.patient)

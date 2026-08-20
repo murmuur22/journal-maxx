@@ -8,7 +8,7 @@ from datetime import timedelta
 from pathlib import Path
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 from .models import Addendum, Attachment, AuditEvent, Card, TherapistComment, User
 
@@ -252,6 +252,44 @@ def submit_card(card, data, uploads, actor, request=None):
         audit(actor, "card.submitted", card.id, request=request)
     except Exception:
         shutil.rmtree(folder, ignore_errors=True)
+        raise
+    return card
+
+@transaction.atomic
+def add_card_attachments(card, uploads, actor, request=None):
+    card = Card.objects.select_for_update().get(pk=card.pk)
+    if card.status != Card.Status.SUBMITTED: raise ValidationError("Attachments require a submitted card.")
+    require_card_storage()
+    uploads = list(uploads)
+    if not uploads: raise ValidationError("Choose at least one attachment.")
+    existing_size = card.attachments.aggregate(total=models.Sum("size"))["total"] or 0
+    if existing_size + sum(upload.size for upload in uploads) > MAX_CARD_UPLOADS:
+        raise ValidationError("Attachments exceed the 100 MiB card limit.")
+    prepared = []
+    for upload in uploads:
+        if upload.size > MAX_FILE_SIZE or upload.content_type not in ALLOWED_TYPES:
+            raise ValidationError(f"Unsupported attachment: {upload.name}")
+        raw = upload.read()
+        if not valid_signature(upload.content_type, raw):
+            raise ValidationError(f"Attachment content does not match its declared type: {upload.name}")
+        prepared.append((upload, raw, safe_name(upload.name)))
+    folder = card_directory(card)
+    prefix = card.local_date.strftime("%y%m%d")
+    written = []
+    try:
+        for upload, raw, clean in prepared:
+            stem, suffix = Path(clean).stem, Path(clean).suffix.lower()
+            candidate, counter = f"{prefix}_{stem}{suffix}", 2
+            while (folder / candidate).exists():
+                candidate = f"{prefix}_{stem}_{counter}{suffix}"; counter += 1
+            path = folder / candidate
+            atomic_write(path, raw); written.append(path)
+            Attachment.objects.create(card=card, stored_name=candidate, original_name=clean, content_type=upload.content_type, size=len(raw), checksum=sha256_bytes(raw))
+        audit(actor, "card.attachments_added", card.id, {"count": len(prepared)}, request)
+    except Exception:
+        for path in written:
+            try: path.unlink(missing_ok=True)
+            except OSError: pass
         raise
     return card
 
