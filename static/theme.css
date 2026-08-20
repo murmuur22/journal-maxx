@@ -846,6 +846,22 @@ footer { background: #000; border-top: 4px solid #fff; color: #777; letter-spaci
 [data-form-builder][aria-busy="true"] > :not(.form-builder-feedback) { opacity: .55; pointer-events: none; }
 .form-builder-feedback:empty { display: none; }
 .form-builder-feedback .message { margin: 0 0 1.25rem; }
+.update-changelog, .update-tools { margin-top: 1.5rem; border: 2px solid #666; background: #050505; box-shadow: 7px 7px 0 #202020; }
+.update-changelog > header, .update-tools > header { display: flex; position: static; align-items: end; justify-content: space-between; width: auto; height: auto; padding: 1rem; border: 0; border-bottom: 1px solid #444; background: #0b0b0b; }
+.update-changelog > header h2, .update-changelog > header p, .update-tools > header h2, .update-tools > header p { margin: 0; }
+.update-changelog > header span, .update-tools > header span { color: #888; font: 700 .55rem ui-monospace, monospace; letter-spacing: .1em; }
+.update-changelog > ul { display: grid; gap: .7rem; margin: 0; padding: 1rem 1rem 1rem 2.2rem; color: #ccc; font-size: .76rem; line-height: 1.5; }
+.update-tools > p { margin: 0; padding: 1rem; border-bottom: 1px solid #333; color: #888; font-size: .7rem; }
+.update-tool-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .8rem 1.5rem; padding: 1rem; }
+.update-tool-card > div:first-child > span { color: #777; font: 700 .52rem ui-monospace, monospace; letter-spacing: .1em; }
+.update-tool-card h3 { margin: .25rem 0; color: #fff; text-transform: uppercase; }
+.update-tool-card p { max-width: 700px; margin: 0; color: #999; font-size: .7rem; line-height: 1.55; }
+.update-tool-card > strong { align-self: start; padding: .45rem .6rem; border: 1px solid #555; color: #aaa; font: 800 .56rem ui-monospace, monospace; letter-spacing: .08em; }
+.update-tool-card > strong.is-clean { border-color: #e6ff3f; color: #e6ff3f; }
+.update-tool-card > strong.is-found { border-color: #ff4f64; color: #ff4f64; }
+.update-tool-card > ul { grid-column: 1 / -1; margin: 0; padding: .75rem .75rem .75rem 2rem; border: 1px solid #333; background: #080808; color: #aaa; font: .62rem/1.5 ui-monospace, monospace; }
+.update-tool-card > div:last-child { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: .65rem; }
+@media (max-width: 650px) { .update-changelog > header, .update-tools > header { align-items: start; flex-direction: column; gap: .5rem; } .update-tool-card { grid-template-columns: 1fr; } .update-tool-card > div:last-child { display: grid; } }
 .form-state { display: flex; align-items: center; gap: .55rem; }
 .form-state > span, .form-state > strong { padding: .65rem .8rem; border: 1px solid #666; font-size: .58rem; letter-spacing: .1em; white-space: nowrap; }
 .form-state > span { color: #777; }

@@ -74,6 +74,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/checkout@v6
       - name: Create machine-readable release manifest
@@ -82,11 +85,21 @@ jobs:
           IMAGE: ghcr.io/${{ github.repository }}
           DIGEST: ${{ needs.publish.outputs.digest }}
         run: |
-          jq -n \
+          jq -n --slurpfile changes CHANGELOG.json \
             --arg version "$VERSION" \
             --arg image "$IMAGE" \
             --arg digest "$DIGEST" \
-            '{schema_version:1, version:$version, image:$image, digest:$digest, database_backup_required:true, card_volume_schema:1, updater_protocol:1}' > journalmax-release.json
+            '{schema_version:2, version:$version, image:$image, digest:$digest, changelog:$changes[0][$version], database_backup_required:true, card_volume_schema:1, updater_protocol:2}' > journalmax-release.json
+          jq -e '.changelog | type == "array" and length > 0' journalmax-release.json
+      - name: Attest release manifest
+        id: attest_manifest
+        uses: actions/attest@v4
+        with:
+          subject-path: journalmax-release.json
+      - name: Prepare bundled manifest attestation
+        env:
+          BUNDLE_PATH: ${{ steps.attest_manifest.outputs.bundle-path }}
+        run: cp "$BUNDLE_PATH" journalmax-release.attestation.json
       - name: Prepare operator assets
         run: cp .env.production.example journalmax-production.env.example
       - name: Publish stable GitHub release
@@ -95,6 +108,7 @@ jobs:
         run: >-
           gh release create "$GITHUB_REF_NAME"
           journalmax-release.json
+          journalmax-release.attestation.json
           compose.production.yaml
           journalmax-production.env.example
           deploy/updater/journalmax_updater.py

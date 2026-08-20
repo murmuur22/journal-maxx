@@ -55,7 +55,7 @@ The SMB account should be restricted to this share. Enable NAS snapshots and a s
 
 ## 3. Install the release and updater
 
-The host updater is intentionally separate from the web container. It runs as root, exposes only three fixed operations over a group-owned Unix socket, and is the only component allowed to control Docker or copy SQLite. Install a current GitHub CLI (`gh`) from GitHub's official package repository as well as Docker; `gh attestation verify --help` must succeed. The updater rejects an image that was not built from the requested version tag and attested by this repository's release workflow on a GitHub-hosted runner.
+The host updater is intentionally separate from the web container. It runs as root, exposes only fixed update and maintenance operations over a group-owned Unix socket, and is the only component allowed to control Docker or copy SQLite. Install a current GitHub CLI (`gh`) from GitHub's official package repository as well as Docker; `gh attestation verify --help` must succeed. No GitHub login, token, source-repository access, or GHCR login is required for this public distribution. The updater downloads the release manifest and its bundled Sigstore attestation, verifies them locally against this repository's release workflow and version tag, then pulls the exact public image digest named by that signed manifest.
 
 Download these assets from the selected GitHub Release:
 
@@ -77,10 +77,6 @@ sudo install -d -o root -g root -m 0755 /etc/journalmax
 sudo install -o root -g root -m 0600 updater.json.example /etc/journalmax/updater.json
 sudo install -o root -g root -m 0644 journalmax-updater.service /etc/systemd/system/journalmax-updater.service
 sudo install -o root -g root -m 0644 journalmax-updater.tmpfiles.conf /etc/tmpfiles.d/journalmax-updater.conf
-sudo install -o root -g root -m 0600 /dev/null /etc/journalmax/updater.env
-UPDATER_GITHUB_TOKEN=$(gh auth token)
-sudo sh -c 'printf "GH_TOKEN=%s\n" "$1" > /etc/journalmax/updater.env' sh "$UPDATER_GITHUB_TOKEN"
-unset UPDATER_GITHUB_TOKEN
 sudoedit /opt/journalmax/.env.production
 sudoedit /etc/journalmax/updater.json
 sudo systemd-tmpfiles --create /etc/tmpfiles.d/journalmax-updater.conf
@@ -102,12 +98,21 @@ Never regenerate `DIARY_SECRET_KEY` during an update.
 
 The default updater configuration expects the files above in `/opt/journalmax`, the web service on `127.0.0.1:8800`, and the container group to use GID 10001. If those deliberate defaults differ, edit `/etc/journalmax/updater.json` before starting the service. Do not point the updater at a general-purpose Compose project.
 
-Authenticate root's GitHub CLI and container client once. Use a dedicated GitHub token limited to reading this public repository and package; the updater never needs write access:
+Do not authenticate GitHub CLI or Docker for Journalmax. Public release discovery, bundled-attestation verification, and public GHCR pulls are credential-free.
+
+### One-time transition from v0.3.x
+
+The updater is host software and cannot replace itself from inside the web container. Before asking an existing v0.3.x installation to install v0.4.0, download the `journalmax_updater.py` and `journalmax-updater.service` assets from the v0.4.0 GitHub Release, then replace and restart only the broker:
 
 ```bash
-sudo gh auth login
-sudo docker login ghcr.io
+sudo install -o root -g root -m 0755 journalmax_updater.py /opt/journalmax/updater/journalmax_updater.py
+sudo install -o root -g root -m 0644 journalmax-updater.service /etc/systemd/system/journalmax-updater.service
+sudo systemctl daemon-reload
+sudo systemctl restart journalmax-updater.service
+sudo systemctl status journalmax-updater.service
 ```
+
+The application remains online during this broker-only restart. Once v0.4.0 is installed, open **Updates → Tools** to check and permanently purge credentials left by the v0.3 updater model.
 
 ## 4. Start and identify the storage volume
 
@@ -164,8 +169,8 @@ sudo docker compose --env-file .env.production -f compose.production.yaml exec d
 
 The host service then:
 
-1. Reads the release manifest itself; the browser cannot choose an image or digest.
-2. Pulls the candidate by immutable digest and verifies its GitHub provenance attestation while the current service stays online.
+1. Downloads the release manifest and bundled attestation itself; the browser cannot choose an image, digest, or verification bundle.
+2. Verifies the manifest's GitHub/Sigstore provenance locally, then pulls its candidate by immutable digest while the current service stays online.
 3. Stops Journalmax, copies SQLite into `/var/lib/journalmax/updater/backups`, and atomically selects the new release.
 4. Recreates only the `diary` service and waits for `/health/ready`.
 5. If readiness fails, stops the candidate, restores the prior environment value and SQLite backup, restarts the previous release, and reports `ROLLED BACK`.

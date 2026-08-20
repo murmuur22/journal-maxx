@@ -303,6 +303,8 @@
     const checkButton = updateWorkspace.querySelector("[data-update-check]");
     const installButton = updateWorkspace.querySelector("[data-update-open]");
     const releaseLink = updateWorkspace.querySelector("[data-update-release-link]");
+    const changelog = document.querySelector("[data-update-changelog]");
+    const changelogVersion = document.querySelector("[data-changelog-version]");
     const confirmModal = document.getElementById("update-confirm");
     const applyForm = confirmModal?.querySelector("[data-update-apply-form]");
     let latestRelease = null;
@@ -330,6 +332,12 @@
         availability.textContent = available ? "NEW RELEASE AVAILABLE" : "CURRENT RELEASE";
         installButton.disabled = !connected || !available || activePhases.has(payload.job?.phase);
         installButton.dataset.version = latestRelease.version;
+        if (Array.isArray(latestRelease.changelog) && changelog) {
+          changelog.replaceChildren(...latestRelease.changelog.map((change) => {
+            const item = document.createElement("li"); item.textContent = change; return item;
+          }));
+          if (changelogVersion) changelogVersion.textContent = `LATEST // v${latestRelease.version}`;
+        }
       } else {
         installButton.disabled = true;
       }
@@ -377,6 +385,50 @@
       finally { submitter.disabled = false; }
     });
     setInterval(refreshUpdate, 4000);
+  }
+
+  const toolsWorkspace = document.querySelector("[data-update-tools]");
+  if (toolsWorkspace) {
+    const state = toolsWorkspace.querySelector("[data-credential-state]");
+    const findings = toolsWorkspace.querySelector("[data-credential-findings]");
+    const checkButton = toolsWorkspace.querySelector("[data-credential-check]");
+    const purgeButton = toolsWorkspace.querySelector("[data-credential-purge-open]");
+    const purgeModal = document.getElementById("credential-purge-confirm");
+    const purgeForm = purgeModal?.querySelector("[data-credential-purge-form]");
+    const csrf = () => toolsWorkspace.querySelector('[name="csrfmiddlewaretoken"]')?.value || "";
+    const renderCredentials = (result) => {
+      const clean = result?.clean === true;
+      state.textContent = clean ? "CLEAN // VERIFIED" : `${result?.findings?.length || 0} CREDENTIAL LOCATION(S) FOUND`;
+      state.classList.toggle("is-clean", clean); state.classList.toggle("is-found", !clean);
+      const rows = clean ? ["No legacy updater credentials were found."] : (result?.findings || []).map((item) => `${item.kind} — ${item.location}`);
+      findings.replaceChildren(...rows.map((text) => { const item = document.createElement("li"); item.textContent = text; return item; }));
+      purgeButton.disabled = clean || !result;
+    };
+    const requestTools = async (url, options = {}) => {
+      const response = await fetch(url, { cache: "no-store", credentials: "same-origin", headers: { Accept: "application/json" }, ...options });
+      let payload; try { payload = await response.json(); } catch (_) { payload = {}; }
+      if (!response.ok) throw new Error(payload.error || `Tool request failed (${response.status})`);
+      return payload.legacy_github_credentials;
+    };
+    const checkCredentials = async () => {
+      checkButton.disabled = true; state.textContent = "CHECKING HOST…";
+      try { renderCredentials(await requestTools(toolsWorkspace.dataset.statusUrl)); }
+      catch (error) { state.textContent = "CHECK FAILED"; findings.replaceChildren(Object.assign(document.createElement("li"), { textContent: error.message })); }
+      finally { checkButton.disabled = false; }
+    };
+    checkButton.addEventListener("click", checkCredentials);
+    purgeButton.addEventListener("click", () => { purgeForm.reset(); purgeForm.querySelector("[data-credential-feedback]").textContent = ""; purgeModal.showModal(); });
+    purgeForm?.addEventListener("submit", async (event) => {
+      event.preventDefault(); const submitter = event.submitter; const feedback = purgeForm.querySelector("[data-credential-feedback]");
+      submitter.disabled = true; feedback.textContent = "PURGING + VERIFYING HOST…";
+      try {
+        const body = new FormData(purgeForm); body.set("csrfmiddlewaretoken", csrf());
+        const result = await requestTools(toolsWorkspace.dataset.purgeUrl, { method: "POST", body });
+        renderCredentials(result); purgeModal.close(); purgeForm.reset();
+      } catch (error) { feedback.textContent = error.message; }
+      finally { submitter.disabled = false; }
+    });
+    checkCredentials();
   }
 
   if (updateNav && !updateWorkspace) {

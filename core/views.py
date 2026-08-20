@@ -447,6 +447,7 @@ def _recent_activity(events):
         "form.published": "published a new form version",
         "system.update_checked": "checked for a JOURNALMAX update",
         "system.update_requested": "authorized a JOURNALMAX update",
+        "system.legacy_credentials_purged": "purged legacy updater credentials",
     }
     activity = []
     for event in events:
@@ -540,7 +541,11 @@ def control_updates(request):
         updater_status = {"connected": True, **updater_request("status")}
     except UpdaterUnavailable as exc:
         updater_status = {"connected": False, "error": str(exc), "installed_version": settings.JOURNALMAX_VERSION, "job": {"phase": "offline", "message": "The host updater is not connected in this environment."}}
-    return render(request, "control/updates.html", {"journalmax_version": settings.JOURNALMAX_VERSION, "updater_status": updater_status})
+    try:
+        changelog = json.loads((settings.BASE_DIR / "CHANGELOG.json").read_text(encoding="utf-8")).get(settings.JOURNALMAX_VERSION, [])
+    except (OSError, json.JSONDecodeError):
+        changelog = []
+    return render(request, "control/updates.html", {"journalmax_version": settings.JOURNALMAX_VERSION, "updater_status": updater_status, "installed_changelog": changelog})
 
 def _updater_json(action, **parameters):
     try:
@@ -576,6 +581,26 @@ def control_update_apply(request):
     response = _updater_json("apply", version=version)
     if response.status_code == 200:
         audit(request.user, "system.update_requested", version, request=request)
+    return response
+
+@never_cache
+@role_required(User.Role.ADMIN)
+@require_http_methods(["GET"])
+def control_update_tools_status(request):
+    return _updater_json("tools_status")
+
+@never_cache
+@role_required(User.Role.ADMIN)
+@require_POST
+def control_update_credentials_purge(request):
+    if not verify_privileged_credential(request.user, request.POST.get("code", "")):
+        requirement = "authenticator or recovery code" if request.user.totp_confirmed else "current passphrase"
+        return JsonResponse({"connected": True, "error": f"A valid {requirement} is required."}, status=403)
+    response = _updater_json("purge_legacy_github_credentials")
+    if response.status_code == 200:
+        payload = json.loads(response.content)
+        result = payload.get("legacy_github_credentials", {})
+        audit(request.user, "system.legacy_credentials_purged", metadata={"removed_count": result.get("removed_count", 0), "clean": result.get("clean", False)}, request=request)
     return response
 
 @role_required(User.Role.ADMIN)

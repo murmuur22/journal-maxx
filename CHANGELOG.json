@@ -1,0 +1,12 @@
+{
+  "0.4.0": [
+    "Updates verify a bundled signed release manifest without storing GitHub or GHCR credentials on the service host.",
+    "The Updates workspace now includes a release changelog and a temporary maintenance-tools section.",
+    "Administrators can check for and permanently purge credentials left by the previous updater model."
+  ],
+  "0.3.3": [
+    "Added a calmer step-by-step diary form and cumulative emotion intensity meters.",
+    "Added post-submission attachments with inline previews and improved file selection.",
+    "Added inactivity logout, temporary action notices, and feedback submission without page refreshes."
+  ]
+}

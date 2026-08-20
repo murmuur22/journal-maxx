@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Small, root-owned update broker for a JOURNALMAX production host.
 
-The web application can request one of three fixed operations over a Unix
+The web application can request only named release and maintenance operations over a Unix
 socket. It cannot submit commands, paths, image names, or digests.
 """
 
@@ -28,6 +28,7 @@ from typing import Any
 SEMVER = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 MAX_REQUEST_BYTES = 16 * 1024
+LEGACY_TOKEN_KEYS = {"GH_TOKEN", "GITHUB_TOKEN"}
 
 
 class UpdateError(RuntimeError):
@@ -81,6 +82,22 @@ def replace_env_value(path: Path, key: str, value: str) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def atomic_write_text(path: Path, content: str) -> None:
+    mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 @dataclass(frozen=True)
 class Config:
     repository: str
@@ -93,6 +110,9 @@ class Config:
     service_name: str = "diary"
     socket_group: int = 10001
     health_timeout_seconds: int = 120
+    updater_env_file: Path = Path("/etc/journalmax/updater.env")
+    root_gh_hosts_file: Path = Path("/root/.config/gh/hosts.yml")
+    root_docker_config_file: Path = Path("/root/.docker/config.json")
 
     @classmethod
     def load(cls, path: Path) -> "Config":
@@ -156,7 +176,7 @@ class Updater:
         semver_key(version)
         return version
 
-    def _release_json(self) -> tuple[dict[str, Any], str]:
+    def _release_artifacts(self) -> tuple[dict[str, Any], str, bytes, bytes]:
         api_url = f"https://api.github.com/repos/{self.config.repository}/releases/latest"
         request = urllib.request.Request(
             api_url,
@@ -164,32 +184,42 @@ class Updater:
         )
         with urllib.request.urlopen(request, timeout=15) as response:
             release = json.load(response)
-        asset_url = next(
-            (asset["browser_download_url"] for asset in release.get("assets", []) if asset.get("name") == "journalmax-release.json"),
-            None,
-        )
-        if not asset_url:
-            raise UpdateError("Latest release has no journalmax-release.json asset")
-        manifest_request = urllib.request.Request(asset_url, headers={"User-Agent": "journalmax-updater/1"})
+        assets = {asset.get("name"): asset.get("browser_download_url") for asset in release.get("assets", [])}
+        manifest_url = assets.get("journalmax-release.json")
+        bundle_url = assets.get("journalmax-release.attestation.json")
+        if not manifest_url or not bundle_url:
+            raise UpdateError("Latest release is missing its manifest or bundled attestation")
+        manifest_request = urllib.request.Request(manifest_url, headers={"User-Agent": "journalmax-updater/2"})
         with urllib.request.urlopen(manifest_request, timeout=15) as response:
-            manifest = json.load(response)
+            manifest_bytes = response.read()
+        bundle_request = urllib.request.Request(bundle_url, headers={"User-Agent": "journalmax-updater/2"})
+        with urllib.request.urlopen(bundle_request, timeout=15) as response:
+            bundle_bytes = response.read()
+        try:
+            manifest = json.loads(manifest_bytes)
+            json.loads(bundle_bytes)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise UpdateError("Release verification assets are not valid JSON") from exc
         self._validate_manifest(manifest)
-        return manifest, str(release.get("html_url", ""))
+        return manifest, str(release.get("html_url", "")), manifest_bytes, bundle_bytes
 
     def _validate_manifest(self, manifest: dict[str, Any]) -> None:
-        if manifest.get("schema_version") != 1:
+        if manifest.get("schema_version") != 2 or manifest.get("updater_protocol") != 2:
             raise UpdateError("Unsupported release manifest schema")
         semver_key(manifest.get("version", ""))
         if manifest.get("image") != self.config.image:
             raise UpdateError("Release manifest names an unexpected container image")
         if not DIGEST.fullmatch(str(manifest.get("digest", ""))):
             raise UpdateError("Release manifest has an invalid image digest")
+        changelog = manifest.get("changelog")
+        if not isinstance(changelog, list) or not changelog or any(not isinstance(item, str) or not item.strip() or len(item) > 500 for item in changelog):
+            raise UpdateError("Release manifest has an invalid changelog")
 
     def status(self, include_latest: bool = False) -> dict[str, Any]:
         installed = self._installed_version()
         result: dict[str, Any] = {"installed_version": installed, "job": self._read_state()}
         if include_latest:
-            manifest, release_url = self._release_json()
+            manifest, release_url, _, _ = self._release_artifacts()
             result.update(
                 latest=manifest,
                 release_url=release_url,
@@ -202,7 +232,7 @@ class Updater:
         with self._lock:
             if self._job_thread and self._job_thread.is_alive():
                 raise UpdateError("An update is already running")
-            manifest, release_url = self._release_json()
+            manifest, release_url, manifest_bytes, bundle_bytes = self._release_artifacts()
             if manifest["version"] != requested_version:
                 raise UpdateError("Requested release is no longer the latest release")
             installed = self._installed_version()
@@ -211,7 +241,7 @@ class Updater:
             self._write_state({"phase": "queued", "message": f"Preparing JOURNALMAX {requested_version}.", "target_version": requested_version})
             self._job_thread = threading.Thread(
                 target=self._run_update,
-                args=(manifest,),
+                args=(manifest, manifest_bytes, bundle_bytes),
                 name=f"journalmax-update-{requested_version}",
                 daemon=True,
             )
@@ -258,7 +288,7 @@ class Updater:
             raise UpdateError("DIARY_HOST_STATE_PATH must be absolute")
         return root / "diary.sqlite3"
 
-    def _run_update(self, manifest: dict[str, Any]) -> None:
+    def _run_update(self, manifest: dict[str, Any], manifest_bytes: bytes, bundle_bytes: bytes) -> None:
         target = manifest["version"]
         old_version = ""
         database: Path | None = None
@@ -271,14 +301,19 @@ class Updater:
             backup = self.config.state_dir / "backups" / f"diary-{old_version}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.sqlite3"
             self._write_state({"phase": "downloading", "message": f"Downloading and verifying JOURNALMAX {target}.", "target_version": target})
             reference = f"{self.config.image}@{manifest['digest']}"
+            with tempfile.TemporaryDirectory(prefix="verify-", dir=self.config.state_dir) as verify_directory:
+                manifest_path = Path(verify_directory) / "journalmax-release.json"
+                bundle_path = Path(verify_directory) / "journalmax-release.attestation.json"
+                manifest_path.write_bytes(manifest_bytes)
+                bundle_path.write_bytes(bundle_bytes)
+                self._command([
+                    "gh", "attestation", "verify", str(manifest_path), "--bundle", str(bundle_path),
+                    "-R", self.config.repository,
+                    "--signer-workflow", f"{self.config.repository}/.github/workflows/release.yml",
+                    "--source-ref", f"refs/tags/v{target}",
+                    "--deny-self-hosted-runners",
+                ])
             self._command(["docker", "pull", reference])
-            self._command([
-                "gh", "attestation", "verify", f"oci://{reference}",
-                "-R", self.config.repository,
-                "--signer-workflow", f"{self.config.repository}/.github/workflows/release.yml",
-                "--source-ref", f"refs/tags/v{target}",
-                "--deny-self-hosted-runners",
-            ])
             self._command(["docker", "tag", reference, f"{self.config.image}:{target}"])
 
             self._write_state({"phase": "backing_up", "message": "Stopping JOURNALMAX and backing up its database.", "target_version": target})
@@ -317,6 +352,56 @@ class Updater:
                 "error": (str(exc) + rollback_error)[-1000:],
             })
 
+    def legacy_credentials_status(self) -> dict[str, Any]:
+        findings: list[dict[str, str]] = []
+        for path in (self.config.updater_env_file, self.config.root_gh_hosts_file, self.config.root_docker_config_file):
+            if path.exists() and (path.is_symlink() or not path.is_file()):
+                findings.append({"location": str(path), "kind": "Unsafe file type; manual review required"})
+                return {"clean": False, "findings": findings, "checked_at": datetime.now(timezone.utc).isoformat()}
+        if self.config.updater_env_file.exists():
+            for raw_line in self.config.updater_env_file.read_text(encoding="utf-8").splitlines():
+                key = raw_line.split("=", 1)[0].strip() if "=" in raw_line else ""
+                if key in LEGACY_TOKEN_KEYS:
+                    findings.append({"location": str(self.config.updater_env_file), "kind": key})
+        if self.config.root_gh_hosts_file.exists():
+            if any(line.strip().startswith(("oauth_token:", "token:")) for line in self.config.root_gh_hosts_file.read_text(encoding="utf-8").splitlines()):
+                findings.append({"location": str(self.config.root_gh_hosts_file), "kind": "GitHub CLI token"})
+        if self.config.root_docker_config_file.exists():
+            try:
+                docker_config = json.loads(self.config.root_docker_config_file.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                findings.append({"location": str(self.config.root_docker_config_file), "kind": "Unreadable Docker config; manual review required"})
+            else:
+                if "ghcr.io" in docker_config.get("auths", {}):
+                    findings.append({"location": str(self.config.root_docker_config_file), "kind": "GHCR Docker authentication"})
+                if "ghcr.io" in docker_config.get("credHelpers", {}):
+                    findings.append({"location": str(self.config.root_docker_config_file), "kind": "GHCR credential helper"})
+        return {"clean": not findings, "findings": findings, "checked_at": datetime.now(timezone.utc).isoformat()}
+
+    def purge_legacy_credentials(self) -> dict[str, Any]:
+        before = self.legacy_credentials_status()
+        if any("manual review required" in item["kind"] for item in before["findings"]):
+            raise UpdateError("Credential files require manual review; automatic purge was refused")
+        docker_config = None
+        if self.config.root_docker_config_file.exists():
+            try:
+                docker_config = json.loads(self.config.root_docker_config_file.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise UpdateError("Docker credential configuration is invalid; nothing was changed") from exc
+        if self.config.updater_env_file.exists():
+            kept = [line for line in self.config.updater_env_file.read_text(encoding="utf-8").splitlines() if not ("=" in line and line.split("=", 1)[0].strip() in LEGACY_TOKEN_KEYS)]
+            atomic_write_text(self.config.updater_env_file, "\n".join(kept) + ("\n" if kept else ""))
+        if self.config.root_gh_hosts_file.exists():
+            kept = [line for line in self.config.root_gh_hosts_file.read_text(encoding="utf-8").splitlines() if not line.strip().startswith(("oauth_token:", "token:"))]
+            atomic_write_text(self.config.root_gh_hosts_file, "\n".join(kept) + ("\n" if kept else ""))
+        if docker_config is not None:
+            docker_config.get("auths", {}).pop("ghcr.io", None)
+            docker_config.get("credHelpers", {}).pop("ghcr.io", None)
+            atomic_write_text(self.config.root_docker_config_file, json.dumps(docker_config, indent=2, sort_keys=True) + "\n")
+        after = self.legacy_credentials_status()
+        self._log(f"Legacy credential purge completed; before={len(before['findings'])} after={len(after['findings'])}")
+        return {**after, "removed_count": len(before["findings"])}
+
     def handle(self, request: dict[str, Any]) -> dict[str, Any]:
         action = request.get("action")
         if action == "status":
@@ -325,6 +410,10 @@ class Updater:
             return self.status(include_latest=True)
         if action == "apply":
             return self.apply(str(request.get("version", "")))
+        if action == "tools_status":
+            return {"legacy_github_credentials": self.legacy_credentials_status()}
+        if action == "purge_legacy_github_credentials":
+            return {"legacy_github_credentials": self.purge_legacy_credentials()}
         raise UpdateError("Unknown updater action")
 
 
