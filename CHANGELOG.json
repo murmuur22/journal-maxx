@@ -1,4 +1,9 @@
 {
+  "0.4.1": [
+    "Added content-blind file-count and Journalmax storage summaries to the administrator overview.",
+    "Added capacity bars that distinguish Journalmax card files from overall drive usage and remaining free space.",
+    "Reorganized overview status cards into a clearer responsive operational summary."
+  ],
   "0.4.0": [
     "Updates verify a bundled signed release manifest without storing GitHub or GHCR credentials on the service host.",
     "The Updates workspace now includes a release changelog and a temporary maintenance-tools section.",

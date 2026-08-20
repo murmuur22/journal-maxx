@@ -47,7 +47,7 @@ class DiaryTests(TestCase):
     def test_readiness_reports_release_database_and_card_volume(self):
         response = self.client.get(reverse("readiness"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["version"], "0.4.0")
+        self.assertEqual(response.json()["version"], "0.4.1")
         self.assertEqual(response.json()["database"], "ok")
         self.assertEqual(response.json()["card_storage"], "local")
         with override_settings(CARD_VOLUME_REQUIRE_MARKER=True):
@@ -328,6 +328,13 @@ class DiaryTests(TestCase):
         response = self.client.get(reverse("control:dashboard"))
         self.assertContains(response, 'class="panel overview-metric" href="#accounts"')
         self.assertContains(response, 'class="panel overview-metric" href="#maintenance"')
+        self.assertContains(response, "FILES")
+        self.assertContains(response, "STORAGE SPACE")
+        self.assertContains(response, 'role="progressbar"')
+        self.assertContains(response, "JOURNALMAX CARDS")
+        self.assertContains(response, "DRIVE FREE")
+        self.assertContains(response, "volume-meter-drive")
+        self.assertContains(response, "volume-meter-journal")
         self.assertContains(response, "Recent activity")
         self.assertContains(response, "PATIENT EXPERIENCE")
         self.assertContains(response, "Build, preview, and publish the questions patients receive.")

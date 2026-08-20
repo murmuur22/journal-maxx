@@ -493,6 +493,11 @@ def control_dashboard(request):
     storage = storage_status()
     cards = list(Card.objects.only("id", "local_date", "status", "folder_name", "quarantined_at", "purge_after").prefetch_related("attachments", "addenda"))
     maintenance_cards = [{"card": card, "integrity": verify_card_integrity(card, storage) if card.status != Card.Status.DRAFT else "draft", **card_file_inventory(card, storage)} for card in cards]
+    stored_file_count = sum(item["file_count"] for item in maintenance_cards)
+    stored_file_bytes = sum(item["total_size"] for item in maintenance_cards)
+    journal_capacity = stored_file_bytes + storage.get("free_bytes", 0) if storage["available"] else 0
+    journal_storage_percent = round(stored_file_bytes / journal_capacity * 100, 2) if journal_capacity else 0
+    journal_volume_percent = round(stored_file_bytes / storage["total_bytes"] * 100, 2) if storage["available"] and storage["total_bytes"] else 0
     users = list(User.objects.annotate(card_count=Count("cards", distinct=True), recovery_count=Count("recovery_codes", filter=Q(recovery_codes__used_at__isnull=True), distinct=True)).order_by("role", "username"))
     patient_accounts = [account for account in users if account.role == User.Role.PATIENT]
     relationships = list(CareRelationship.objects.select_related("therapist", "patient"))
@@ -512,7 +517,7 @@ def control_dashboard(request):
     events = list(AuditEvent.objects.select_related("actor")[:100])
     emotions = list(Emotion.objects.order_by("sort_order"))
     feedback_reports = list(FeedbackReport.objects.select_related("author", "archived_by"))
-    return render(request, "control/dashboard.html", {"journalmax_version": settings.JOURNALMAX_VERSION, "storage": storage, "counts": {"users": User.objects.count(), "cards": Card.objects.count(), "submitted": Card.objects.filter(status=Card.Status.SUBMITTED).count()}, "maintenance_cards": maintenance_cards, "events": events, "recent_activity": _recent_activity(events[:12]), "users": users, "patient_accounts": patient_accounts, "emotions": emotions, "custom_fields": custom_fields, "form_version": getattr(form_def, "version", None), "has_staged_changes": custom_fields != active_fields, "feedback_reports": feedback_reports, "active_feedback_count": sum(report.archived_at is None for report in feedback_reports)})
+    return render(request, "control/dashboard.html", {"journalmax_version": settings.JOURNALMAX_VERSION, "storage": storage, "journal_storage": {"bytes": stored_file_bytes, "capacity": journal_capacity, "percent": journal_storage_percent, "volume_percent": journal_volume_percent}, "counts": {"users": User.objects.count(), "cards": Card.objects.count(), "submitted": Card.objects.filter(status=Card.Status.SUBMITTED).count(), "files": stored_file_count}, "maintenance_cards": maintenance_cards, "events": events, "recent_activity": _recent_activity(events[:12]), "users": users, "patient_accounts": patient_accounts, "emotions": emotions, "custom_fields": custom_fields, "form_version": getattr(form_def, "version", None), "has_staged_changes": custom_fields != active_fields, "feedback_reports": feedback_reports, "active_feedback_count": sum(report.archived_at is None for report in feedback_reports)})
 
 @role_required(User.Role.ADMIN)
 @require_POST
