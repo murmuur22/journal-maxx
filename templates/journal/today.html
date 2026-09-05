@@ -1,5 +1,5 @@
 {% extends "base.html" %}{% load core_tags %}{% block title %}TODAY // JOURNALMAX{% endblock %}{% block content %}
-<div class="hero"><p class="eyebrow">DAILY SIGNAL // {{ card.local_date }}</p><h1>HOW DO YOU FEEL TODAY?</h1><p>Move one step at a time.</p></div>
+<div class="hero"><p class="eyebrow">DAILY SIGNAL // {{ card.local_date|date:"l, F j, Y" }}</p><h1>HOW DO YOU FEEL TODAY?</h1><p>Move one step at a time.</p></div>
 {% if not storage.available %}<div class="message error">CARD STORAGE OFFLINE — your text can be saved locally, but submission and uploads are disabled.</div>{% endif %}
 <form method="post" enctype="multipart/form-data" id="diary-form">{% csrf_token %}
 <section class="panel step" data-emotion-step><span class="stepno">01</span><h2>Choose significant emotions</h2><p>Choose only what matters today. You can choose more than one.</p>

@@ -44,10 +44,11 @@ class DiaryTests(TestCase):
         self.assertContains(response, "login-brand")
         self.assertNotContains(response, "ENTER THE THOUGHTSPACE")
 
+    @override_settings(JOURNALMAX_VERSION="9.8.7")
     def test_readiness_reports_release_database_and_card_volume(self):
         response = self.client.get(reverse("readiness"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["version"], "0.4.1")
+        self.assertEqual(response.json()["version"], "9.8.7")
         self.assertEqual(response.json()["database"], "ok")
         self.assertEqual(response.json()["card_storage"], "local")
         with override_settings(CARD_VOLUME_REQUIRE_MARKER=True):
@@ -781,6 +782,61 @@ class DiaryTests(TestCase):
         self.assertContains(response, 'class="emotion-stamp"')
         self.assertContains(response, "Joy, intensity 4 of 5")
         self.assertNotContains(response, "is-unread")
+
+    def test_patient_archive_tallies_unread_comments_until_card_is_opened(self):
+        card = self.submitted(); reviewer = Client(); reviewer.force_login(self.reviewer)
+        reviewer.post(reverse("review:comment", args=[card.id]), {"body": "First unread note."})
+        reviewer.post(reverse("review:comment", args=[card.id]), {"body": "Second unread note."})
+        self.client.force_login(self.patient)
+
+        archive = self.client.get(reverse("journal:history"))
+        self.assertContains(archive, "2 UNREAD")
+        calendar = self.client.get(reverse("journal:history") + "?view=calendar&month=2026-08")
+        self.assertContains(calendar, 'class="patient-comment-count">2</small>')
+        self.assertEqual(TherapistComment.objects.filter(card=card, patient_read_at__isnull=True).count(), 2)
+
+        self.client.get(reverse("journal:detail", args=[card.id]))
+        self.assertFalse(TherapistComment.objects.filter(card=card, patient_read_at__isnull=True).exists())
+        archive = self.client.get(reverse("journal:history"))
+        self.assertNotContains(archive, "UNREAD")
+        self.assertNotContains(archive, "patient-comment-count")
+
+    def test_patient_notifications_are_scoped_and_clear_when_card_is_opened(self):
+        card = self.submitted()
+        reviewer = Client(); reviewer.force_login(self.reviewer)
+        for body in ["First note", "Second note"]:
+            reviewer.post(reverse("review:comment", args=[card.id]), {"body": body})
+        self.client.force_login(self.patient)
+        response = self.client.get(reverse("journal:trends"))
+        items = response.context["notifications"]
+        self.assertEqual(response.context["notification_count"], 2)
+        self.assertContains(response, 'notification-bell has-notifications')
+        self.assertContains(response, 'aria-label="Notifications, 2 unread"')
+        self.assertEqual(len({item["url"] for item in items}), 2)
+        self.assertIn(f'#comment-{card.therapist_comments.last().pk}', items[0]["url"])
+        self.assertEqual(card.therapist_comments.filter(patient_read_at__isnull=True).count(), 2)
+
+        other = User.objects.create_user(username="other", role=User.Role.PATIENT)
+        self.client.force_login(other)
+        response = self.client.get(reverse("journal:history"))
+        self.assertEqual(response.context["notifications"], [])
+        self.assertContains(response, "No unread notifications.")
+        self.assertNotContains(response, "New comment from")
+        for user in [self.reviewer, self.admin]:
+            self.client.force_login(user)
+            response = self.client.get(reverse("home"), follow=True)
+            self.assertNotContains(response, 'data-notifications')
+
+        self.client.force_login(self.patient)
+        response = self.client.get(items[0]["url"])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["notification_count"], 0)
+        self.assertNotContains(response, 'notification-bell has-notifications')
+        reviewer.post(reverse("review:comment", args=[card.id]), {"body": "A new note"})
+        self.assertEqual(self.client.get(reverse("journal:history")).context["notification_count"], 1)
+        card.status = Card.Status.QUARANTINED
+        card.save(update_fields=["status"])
+        self.assertEqual(self.client.get(reverse("journal:history")).context["notification_count"], 0)
 
     def test_therapist_patient_dropdown_populates_and_scopes_cards(self):
         first_card = self.submitted()

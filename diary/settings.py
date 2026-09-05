@@ -28,6 +28,7 @@ TEMPLATES = [{
     "OPTIONS": {"context_processors": [
         "django.template.context_processors.request", "django.contrib.auth.context_processors.auth",
         "django.contrib.messages.context_processors.messages", "core.context_processors.reviewer_patient",
+        "core.context_processors.patient_notifications",
     ]},
 }]
 WSGI_APPLICATION = "diary.wsgi.application"

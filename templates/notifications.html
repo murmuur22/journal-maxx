@@ -1,0 +1,13 @@
+<div class="notifications" data-notifications>
+  <button type="button" class="link notification-bell{% if notification_count %} has-notifications{% endif %}" aria-label="Notifications, {{ notification_count }} unread" aria-expanded="false" aria-controls="notification-panel">
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4M12 2V0"/></svg>
+    {% if notification_count %}<span class="notification-count" aria-hidden="true">{{ notification_count }}</span>{% endif %}
+  </button>
+  <section class="notification-panel" id="notification-panel" aria-labelledby="notification-heading" hidden>
+    <div class="notification-heading"><h2 id="notification-heading">Notifications</h2>{% if notification_count %}<span>{{ notification_count }} UNREAD</span>{% endif %}</div>
+    <ul class="notification-list">
+      {% for notification in notifications %}<li><a class="notification-item" href="{{ notification.url }}" data-notification-kind="{{ notification.kind }}"><strong>{{ notification.title }}</strong><span>{{ notification.detail }}</span><time datetime="{{ notification.created_at|date:'c' }}">{{ notification.created_at|date:'D, j M Y, H:i' }}</time></a></li>
+      {% empty %}<li class="notification-empty">You’re all caught up.<span>No unread notifications.</span></li>{% endfor %}
+    </ul>
+  </section>
+</div>

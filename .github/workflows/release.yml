@@ -91,6 +91,7 @@ jobs:
             --arg digest "$DIGEST" \
             '{schema_version:2, version:$version, image:$image, digest:$digest, changelog:$changes[0][$version], database_backup_required:true, card_volume_schema:1, updater_protocol:2}' > journalmax-release.json
           jq -e '.changelog | type == "array" and length > 0' journalmax-release.json
+          jq -r '.changelog[] | "- " + .' journalmax-release.json > release-notes.md
       - name: Attest release manifest
         id: attest_manifest
         uses: actions/attest@v4
@@ -115,4 +116,4 @@ jobs:
           deploy/updater/journalmax-updater.service
           deploy/updater/journalmax-updater.tmpfiles.conf
           deploy/updater/updater.json.example
-          --verify-tag --generate-notes --title "JOURNALMAX $GITHUB_REF_NAME"
+          --verify-tag --notes-file release-notes.md --title "JOURNALMAX $GITHUB_REF_NAME"

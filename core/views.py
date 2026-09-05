@@ -179,7 +179,9 @@ def journal_today(request):
 
 @role_required(User.Role.PATIENT)
 def journal_history(request):
-    cards = list(Card.objects.filter(patient=request.user).exclude(status=Card.Status.QUARANTINED).prefetch_related("addenda", "therapist_comments"))
+    cards = list(Card.objects.filter(patient=request.user).exclude(status=Card.Status.QUARANTINED).annotate(
+        unread_comment_count=Count("therapist_comments", filter=Q(therapist_comments__patient_read_at__isnull=True)),
+    ).prefetch_related("addenda", "therapist_comments", "attachments"))
     catalog = {emotion.slug: emotion for emotion in Emotion.objects.all()}
     for card in cards:
         card.display_emotions = [{**item, "face": getattr(catalog.get(item.get("id")), "face", "◆"), "color": getattr(catalog.get(item.get("id")), "color", "#79ffe1")} for item in card.content_index.get("emotions", [])]
@@ -313,7 +315,9 @@ def card_detail(request, card_id):
         meta, _ = ReviewerMetadata.objects.get_or_create(card=card, reviewer=request.user)
         if not meta.is_read: meta.is_read = True; meta.save(update_fields=["is_read", "updated_at"])
         audit(request.user, "card.viewed", card.id, request=request)
-    else: meta = None
+    else:
+        meta = None
+        card.therapist_comments.filter(patient_read_at__isnull=True).update(patient_read_at=timezone.now())
     attachments = list(card.attachments.all())
     image_attachments = [item for item in attachments if item.content_type.startswith("image/")]
     file_attachments = [item for item in attachments if not item.content_type.startswith("image/")]
@@ -354,7 +358,7 @@ def attachment_download(request, card_id, attachment_id):
 @role_required(User.Role.REVIEWER)
 def review_list(request):
     patient = get_reviewer_patient(request)
-    cards = list(Card.objects.filter(status=Card.Status.SUBMITTED, patient=patient).prefetch_related("reviewer_metadata")) if patient else []
+    cards = list(Card.objects.filter(status=Card.Status.SUBMITTED, patient=patient).prefetch_related("reviewer_metadata", "addenda", "attachments", "therapist_comments")) if patient else []
     catalog = {emotion.slug: emotion for emotion in Emotion.objects.all()}
     def meta(card): return next((m for m in card.reviewer_metadata.all() if m.reviewer_id == request.user.id), None)
     for card in cards:

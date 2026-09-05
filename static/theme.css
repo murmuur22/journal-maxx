@@ -348,6 +348,9 @@ details summary { color: #fff; }
 .patient-review-card { border-left: 7px solid #fff; }
 .patient-review-card .review-card-date > span { color: #aaa; }
 .patient-review-card .review-card-meta strong { color: #fff; }
+.patient-unread-comments { display: inline-block; margin-left: .65rem; padding: .2rem .4rem; border: 1px solid #fff; background: #fff; color: #000; font-size: .52rem; letter-spacing: .08em; box-shadow: 0 0 9px #fff8; }
+.emotion-stamp.has-unread-comments { position: relative; }
+.emotion-stamp .patient-comment-count { position: absolute; top: -7px; right: -7px; display: grid; place-items: center; min-width: 22px; height: 22px; padding: 0 5px; border: 2px solid #000; border-radius: 50%; background: #fff; color: #000; font: 900 .58rem/1 Arial,sans-serif; box-shadow: 0 0 10px #fff; }
 .patient-calendar-note { justify-content: flex-end; }
 .draft-stamp { --emotion: #777; }
 .draft-stamp > span { border-style: dashed; color: #888; box-shadow: none; }
@@ -1025,6 +1028,8 @@ th[aria-sort="ascending"] .sort-heading i, th[aria-sort="descending"] .sort-head
   body:not(.login-screen) > header .brand { display: none; }
   body:not(.login-screen) > header nav { width: 100%; }
   body:not(.login-screen) > header .feedback-button { margin-left: auto; }
+  body:not(.login-screen) > header .notifications { margin-left: auto; }
+  body:not(.login-screen) > header .notifications + .feedback-button { margin-left: 0; }
   body:not(.login-screen) > header .disconnect-form { margin-left: 0; }
 }
 
@@ -1502,9 +1507,9 @@ th[aria-sort="ascending"] .sort-heading i, th[aria-sort="descending"] .sort-head
   }
   .patient-switcher + .nav-item { order: 2; }
   .patient-switcher + .nav-item + .nav-item { order: 3; }
-  .nav-archive { order: 1; }
+  .nav-archive { order: 2; }
   .nav-today {
-    order: 2;
+    order: 3;
     flex: 0 0 58px !important;
     width: 58px !important;
     max-width: 58px !important;
@@ -1522,7 +1527,7 @@ th[aria-sort="ascending"] .sort-heading i, th[aria-sort="descending"] .sort-head
     font-weight: 500 !important;
   }
   .nav-today[aria-current="page"] { box-shadow: 5px 5px 0 #555, 0 0 24px #ffffff70 !important; }
-  .nav-signals { order: 3; }
+  .nav-signals { order: 1; }
   .actions { position: static; bottom: auto; padding: 1rem 0 0; background: none; }
 
   /* A phone-native month overview: seven compact columns with tappable event dots. */
@@ -1643,4 +1648,59 @@ th[aria-sort="ascending"] .sort-heading i, th[aria-sort="descending"] .sort-head
   .account-actions button,
   .maintenance-actions button,
   .prompt-actions button { min-height: 44px; }
+}
+
+/* Shared patient inbox; individual sources supply their own notification text. */
+.notifications { position: relative; flex: 0 0 auto; }
+.notification-bell.link { position: relative; display: grid; place-items: center; width: 44px; height: 44px; padding: 9px; color: #888; border: 1px solid transparent; }
+.notification-bell svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.notification-bell.has-notifications { color: #fff; filter: drop-shadow(0 0 6px #ffffff80); }
+.notification-bell.link:hover,
+.notification-bell.link:focus-visible,
+.notification-bell.link[aria-expanded="true"] {
+  border-color: #fff;
+  background: #fff;
+  color: #000;
+  box-shadow: 3px 3px 0 #555, 0 0 12px #ffffff55;
+  text-shadow: none;
+  filter: none;
+  transform: translate(-1px, -1px);
+}
+.notification-count { position: absolute; top: -3px; right: -5px; min-width: 18px; padding: 2px 4px; background: #f4f4ef; color: #020202; font: 900 .65rem/1.2 ui-monospace, monospace; text-align: center; }
+.notification-panel { position: absolute; top: calc(100% + 12px); right: 0; z-index: 60; width: min(360px, calc(100vw - 24px)); border: 2px solid #eee; background: #080808; box-shadow: 7px 7px 0 #292929, 0 12px 30px #000b; text-align: left; }
+.notification-panel[hidden] { display: none; }
+.notification-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; border-bottom: 1px solid #555; }
+.notification-heading h2 { margin: 0; font: 900 .8rem ui-monospace, monospace; text-transform: uppercase; }
+.notification-heading > span { color: #aaa; font-size: .6rem; white-space: nowrap; }
+.notification-list { list-style: none; margin: 0; padding: 0; max-height: min(420px, 60dvh); overflow-y: auto; overscroll-behavior: contain; }
+.notification-list li + li { border-top: 1px solid #333; }
+.notification-list a.notification-item { display: grid; gap: .4rem; padding: 1rem; color: #eee; font-size: .75rem; line-height: 1.5; letter-spacing: 0; text-decoration: none; text-transform: none; overflow-wrap: anywhere; }
+.notification-item span, .notification-item time { color: #aaa; font-size: .7rem; }
+.notification-list a:hover, .notification-list a:focus-visible { background: #202020; color: #fff; }
+.notification-bell:focus-visible, .notification-item:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.notification-empty { padding: 1.5rem 1rem; font-size: .8rem; }
+.notification-empty span { display: block; margin-top: .5rem; color: #999; font-size: .7rem; }
+.therapist-comment { scroll-margin-top: 140px; }
+.therapist-comment:target { outline: 1px solid #fff; outline-offset: 3px; }
+@media (max-width: 720px) {
+  .notifications { order: 4; flex: 0 0 44px; }
+  .notification-panel { top: auto; bottom: calc(100% + 20px); right: 0; }
+}
+
+.review-card-date time .card-weekday { display: block; margin-bottom: .35rem; color: #aaa; font-size: .6rem; line-height: 1.4; letter-spacing: 0; }
+
+.card-counts { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; }
+.card-counts > span { white-space: nowrap; }
+@media (min-width: 721px) {
+  .review-card { grid-template-columns: 140px minmax(0, 1fr) 140px; }
+  .review-card-date { grid-column: 1; grid-row: 1; }
+  .review-card .review-card-meta { grid-column: 3; grid-row: 1; flex-direction: column; align-items: flex-end; padding: 1.25rem 1rem; }
+}
+@media (max-width: 720px) {
+  .review-card-date { grid-column: 1; grid-row: 1 / 3; }
+  .review-card .review-card-meta { grid-column: 2; grid-row: 2; min-width: 0; flex-direction: column; align-items: flex-end; gap: .6rem; padding: 0 .5rem .75rem 0; }
+  .card-counts { flex-direction: row; align-items: center; gap: .2rem; max-width: 100%; overflow-x: auto; }
+  .review-card-meta .card-counts > span { font-size: .48rem; line-height: 1.4; letter-spacing: 0; }
+  .card-counts > span + span::before { content: "//"; margin-right: .2rem; color: #666; }
+  .review-card-meta .patient-unread-comments { margin-left: 0; }
 }

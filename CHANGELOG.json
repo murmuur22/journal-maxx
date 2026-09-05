@@ -1,4 +1,11 @@
 {
+  "0.4.2": [
+    "Added a patient notification bell with an unread counter and a menu linking each unread therapist comment directly to its diary card.",
+    "Added unread comment badges to the patient archive and calendar. Opening a card marks its comments as read, and returning with the browser Back button refreshes the counts.",
+    "Improved mobile navigation with Signals, Archive, Today/New, and Notifications in that order, plus a responsive notification menu and matching button highlights.",
+    "Added weekday names to patient and therapist archive dates, card details, Today, notification dates, and Signals summaries (TICKET-0013).",
+    "Added attachment and comment totals to archive lists, ordered as comments, addendums, and attachments. Counts stack on desktop and use a compact line on mobile, with a full-height date divider."
+  ],
   "0.4.1": [
     "Added content-blind file-count and Journalmax storage summaries to the administrator overview.",
     "Added capacity bars that distinguish Journalmax card files from overall drive usage and remaining free space.",

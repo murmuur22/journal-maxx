@@ -1,4 +1,10 @@
 from .models import User
+from .notifications import unread_notifications
+
+
+def patient_notifications(request):
+    items = unread_notifications(request.user)
+    return {"notifications": items, "notification_count": len(items)}
 
 
 def get_reviewer_patient(request):

@@ -9,7 +9,7 @@
 
 {% if checkin_count %}
 <section class="signal-summary" aria-label="Pattern summary">
-  <div class="signal-stat"><span>{% if reviewer_mode %}OBSERVATION WINDOW{% else %}CHECK-INS{% endif %}</span><b>{{ checkin_count }} {% if reviewer_mode %}CARDS{% endif %}</b><small>{{ first_date|date:"M j" }}—{{ last_date|date:"M j, Y" }}</small></div>
+  <div class="signal-stat"><span>{% if reviewer_mode %}OBSERVATION WINDOW{% else %}CHECK-INS{% endif %}</span><b>{{ checkin_count }} {% if reviewer_mode %}CARDS{% endif %}</b><small>{{ first_date|date:"D, M j" }}—{{ last_date|date:"D, M j, Y" }}</small></div>
   <div class="signal-stat" style="--summary-color:{{ most_present.color }}"><span>{% if reviewer_mode %}MOST RECURRENT{% else %}MOST OFTEN NOTED{% endif %}</span><b>{{ most_present.face }} {{ most_present.label }}</b><small>{{ most_present.count }} of {{ checkin_count }} check-in{{ checkin_count|pluralize }}</small></div>
   <div class="signal-stat" style="--summary-color:{{ strongest.color }}"><span>{% if reviewer_mode %}HIGHEST AVG INTENSITY{% else %}STRONGEST AVERAGE{% endif %}</span><b>{{ strongest.face }} {{ strongest.label }}</b><small>{{ strongest.average }} average intensity</small></div>
 </section>
@@ -24,7 +24,7 @@
 <div class="signals-layout">
   <section class="panel"><div class="section-heading"><div><p class="eyebrow">SIGNAL MIX</p><h2>{% if reviewer_mode %}What the patient recorded{% else %}What you have logged{% endif %}</h2></div></div>
     <div class="emotion-summary-list">{% for emotion in emotion_rows %}<div class="emotion-summary" style="--emotion:{{ emotion.color }}">
-      <span class="emotion-summary-face">{{ emotion.face }}</span><div><b>{{ emotion.label }}</b><small>{{ emotion.count }} appearance{{ emotion.count|pluralize }} · latest {{ emotion.last_date|date:"M j" }}</small><div class="intensity-bar"><i style="width:{% widthratio emotion.average 5 100 %}%"></i></div></div><strong>{{ emotion.average }}<small>/5 avg</small></strong>
+      <span class="emotion-summary-face">{{ emotion.face }}</span><div><b>{{ emotion.label }}</b><small>{{ emotion.count }} appearance{{ emotion.count|pluralize }} · latest {{ emotion.last_date|date:"D, M j" }}</small><div class="intensity-bar"><i style="width:{% widthratio emotion.average 5 100 %}%"></i></div></div><strong>{{ emotion.average }}<small>/5 avg</small></strong>
     </div>{% endfor %}</div>
   </section>
   <aside class="panel reflection-panel" style="--weather-accent:{{ most_present.color }}">{% if reviewer_mode %}<p class="eyebrow">SESSION PREP</p><h2>Bring back context</h2><p>Questions this view can help surface:</p><ul><li>What was happening around recurring signals?</li><li>Which emotions were recorded together?</li><li>Which card best explains a visible shift?</li><li>What meaning does the patient give the pattern?</li></ul><p class="muted">A missing day means “no submitted card,” not “no emotion.” Open the source card before drawing conclusions.</p>{% else %}<p class="eyebrow">A WAY TO USE THIS</p><h2>Notice, don’t judge</h2><p>Try one question at a time:</p><ul><li>What was happening around repeated emotions?</li><li>Which feelings tend to arrive together?</li><li>What changed before a shift in intensity?</li></ul><p class="muted">Only submitted days appear here. Missing days mean “no check-in,” not “no emotion.”</p>{% endif %}</aside>
