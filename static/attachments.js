@@ -28,6 +28,11 @@
     const originallyDisabled = new Map(submits.map((button) => [button, button.disabled]));
     const mib = (bytes) => (Math.ceil(bytes / 1048576 * 100) / 100).toFixed(2);
     let invalid = false;
+    let uploading = false;
+    const feedback = picker.querySelector("[data-upload-feedback]");
+    const uploadBar = picker.querySelector("[data-upload-progress]");
+    const uploadStatus = picker.querySelector("[data-upload-status]");
+    const uploadDetail = picker.querySelector("[data-upload-detail]");
     const updateQuota = () => {
       const queued = staged.reduce((total, item) => total + item.file.size, 0);
       const projected = stored + queued;
@@ -93,6 +98,7 @@
     });
     render();
     form?.addEventListener("submit", (event) => {
+      if (uploading) { event.preventDefault(); return; }
       if (event.submitter?.name === "action" && event.submitter.value === "save") {
         // Saving text must still work when queued attachments exceed upload limits.
         picker.querySelectorAll('input[type="file"]').forEach((input) => { input.disabled = true; });
@@ -108,7 +114,77 @@
         event.preventDefault();
         const input = label.querySelector('input[type="file"]:not([hidden])');
         input.setCustomValidity("Choose at least one file."); input.reportValidity(); input.setCustomValidity("");
+        return;
       }
+      if (!staged.length || !feedback || event.defaultPrevented) return;
+      event.preventDefault();
+      // Capture fields and the clicked action before disabling the form.
+      const body = new FormData(form);
+      if (event.submitter?.name) body.append(event.submitter.name, event.submitter.value);
+      const controls = [...form.elements].map((control) => [control, control.disabled]);
+      controls.forEach(([control]) => { control.disabled = true; });
+      uploading = true;
+      form.setAttribute("aria-busy", "true");
+      feedback.hidden = false;
+      feedback.classList.remove("is-error");
+      uploadBar.hidden = false;
+      uploadBar.value = 0;
+      uploadStatus.textContent = "Uploading attachments…";
+      uploadDetail.textContent = "Keep this page open while your files upload.";
+      feedback.focus({ preventScroll: true });
+      feedback.scrollIntoView({ block: "center", behavior: "smooth" });
+      const beforeUnload = (e) => { e.preventDefault(); e.returnValue = ""; };
+      window.addEventListener("beforeunload", beforeUnload);
+      const finish = () => {
+        uploading = false;
+        form.removeAttribute("aria-busy");
+        window.removeEventListener("beforeunload", beforeUnload);
+        controls.forEach(([control, disabled]) => { control.disabled = disabled; });
+      };
+      const fail = (message) => {
+        finish();
+        feedback.classList.add("is-error");
+        uploadBar.hidden = true;
+        uploadStatus.textContent = "Upload could not be confirmed.";
+        uploadDetail.textContent = message;
+      };
+      const request = new XMLHttpRequest();
+      request.open("POST", form.action);
+      request.setRequestHeader("Accept", "application/json");
+      request.responseType = "json";
+      request.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) {
+          const percent = Math.min(100, Math.floor(e.loaded / e.total * 100));
+          uploadBar.value = percent;
+          uploadStatus.textContent = `Uploading attachments… ${percent}%`;
+          uploadDetail.textContent = `${mib(e.loaded)} of ${mib(e.total)} MiB transferred. Keep this page open.`;
+        } else {
+          uploadBar.removeAttribute("value");
+        }
+      });
+      request.upload.addEventListener("load", () => {
+        uploadBar.removeAttribute("value");
+        uploadStatus.textContent = "Upload received. Saving your card…";
+        uploadDetail.textContent = "Checking and saving your attachments. Keep this page open.";
+      });
+      request.addEventListener("load", () => {
+        if (request.status >= 200 && request.status < 300 && request.response?.redirect) {
+          window.removeEventListener("beforeunload", beforeUnload);
+          uploadBar.value = 100;
+          uploadStatus.textContent = "Saved. Opening your card…";
+          window.location.assign(request.response.redirect);
+        } else {
+          const message = request.status === 413
+            ? "The server rejected this upload as too large. Remove some files and try again."
+            : request.status === 403 || request.responseURL.includes("/login/")
+              ? "Your session may have expired. Keep your text and files, then sign in again."
+              : "The connection or server failed. Your selection is still here. Check your card before retrying to avoid duplicate attachments.";
+          fail(request.response?.error || message);
+        }
+      });
+      request.addEventListener("error", () => fail("Connection lost. Your selection is still here. Check your card before retrying to avoid duplicate attachments."));
+      request.addEventListener("abort", () => fail("Upload interrupted. Check your card before retrying."));
+      try { request.send(body); } catch (_) { fail("The upload could not start. Your selection is still here; please try again."); }
     });
   });
 })();

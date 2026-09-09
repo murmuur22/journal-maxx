@@ -174,8 +174,14 @@ def journal_today(request):
                 missing = [f["label"] for f, response in zip(custom_fields, custom) if f.get("required") and response["value"] in ("", False, None)]
                 if missing: raise ValueError("Required fields: " + ", ".join(missing))
                 submit_card(card, data, request.FILES.getlist("attachments"), request.user, request)
-                messages.success(request, "Diary card locked and submitted."); return redirect("journal:detail", card_id=card.id)
-            except Exception as exc: messages.error(request, str(exc))
+                messages.success(request, "Diary card locked and submitted.")
+                if request.headers.get("Accept") == "application/json":
+                    return JsonResponse({"redirect": reverse("journal:detail", args=[card.id])})
+                return redirect("journal:detail", card_id=card.id)
+            except Exception as exc:
+                if request.headers.get("Accept") == "application/json":
+                    return JsonResponse({"error": str(exc)}, status=400)
+                messages.error(request, str(exc))
     custom_values = {item.get("key"): item.get("value") for item in card.draft_data.get("custom", [])}
     return render(request, "journal/today.html", {**policy_context(), "card": card, "emotions": emotions, "draft": card.draft_data, "custom_fields": custom_fields, "custom_values": custom_values, "storage": storage_status()})
 
@@ -342,7 +348,12 @@ def card_attachment_add(request, card_id):
     try:
         add_card_attachments(card, request.FILES.getlist("attachments"), request.user, request)
         messages.success(request, "Attachment added to the submitted card.")
-    except Exception as exc: messages.error(request, str(exc))
+    except Exception as exc:
+        if request.headers.get("Accept") == "application/json":
+            return JsonResponse({"error": str(exc)}, status=400)
+        messages.error(request, str(exc))
+    if request.headers.get("Accept") == "application/json":
+        return JsonResponse({"redirect": reverse("journal:detail", args=[card.id])})
     return redirect("journal:detail", card_id=card.id)
 
 @role_required(User.Role.PATIENT, User.Role.REVIEWER)

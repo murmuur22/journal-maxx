@@ -30,6 +30,36 @@ class AttachmentFeatureTests(TestCase):
     def limits(self, file=1, card=2):
         AttachmentSettings.objects.update_or_create(pk=1, defaults={'file_limit_mib': file, 'card_limit_mib': card})
 
+    def test_progress_upload_submission_and_validation(self):
+        self.client.force_login(self.patient)
+        url = reverse('journal:today')
+        response = self.client.post(url, {'action': 'submit', 'attachments': upload()}, HTTP_ACCEPT='application/json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('emotion', response.json()['error'])
+        self.assertEqual(Card.objects.get(patient=self.patient).status, Card.Status.DRAFT)
+        response = self.client.post(url, {'action': 'submit', 'emotions': ['joy'], 'intensity_joy': '3', 'attachments': upload()}, HTTP_ACCEPT='application/json')
+        self.assertEqual(response.status_code, 200)
+        card = Card.objects.get(patient=self.patient)
+        self.assertEqual(card.status, Card.Status.SUBMITTED)
+        self.assertEqual(card.attachments.count(), 1)
+        self.assertEqual(response.json()['redirect'], reverse('journal:detail', args=[card.id]))
+        self.assertContains(self.client.get(response.json()['redirect']), 'Diary card locked and submitted.')
+
+    def test_progress_append_success_and_error(self):
+        card = self.submitted()
+        self.client.force_login(self.patient)
+        url = reverse('journal:attachment_add', args=[card.id])
+        response = self.client.post(url, {'attachments': upload()}, HTTP_ACCEPT='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['redirect'], reverse('journal:detail', args=[card.id]))
+        response = self.client.post(url, {'attachments': upload(data=b'invalid')}, HTTP_ACCEPT='application/json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('declared type', response.json()['error'])
+        self.assertEqual(card.attachments.count(), 2)
+        csrf_client = Client(enforce_csrf_checks=True)
+        csrf_client.force_login(self.patient)
+        self.assertEqual(csrf_client.post(url, {'attachments': upload()}, HTTP_ACCEPT='application/json').status_code, 403)
+
     def test_defaults_and_media_types_on_both_upload_paths(self):
         limits = AttachmentSettings.current()
         self.assertEqual((limits.file_limit_mib, limits.card_limit_mib), (100, 500))

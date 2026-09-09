@@ -5,3 +5,8 @@
   <progress data-attachment-progress max="{{ attachment_policy.card_limit_bytes }}" value="{{ attachment_used_bytes }}" aria-label="Attachment storage used including queued files"></progress>
   <p data-attachment-warning role="status" aria-live="polite" aria-atomic="true" hidden></p>
 </div>
+<div class="attachment-upload" data-upload-feedback hidden tabindex="-1">
+  <p data-upload-status role="status" aria-live="polite" aria-atomic="true"></p>
+  <progress data-upload-progress max="100" value="0" aria-label="Upload progress"></progress>
+  <p data-upload-detail></p>
+</div>

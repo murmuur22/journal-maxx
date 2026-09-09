@@ -1,4 +1,9 @@
 {
+  "0.5.1": [
+    "Added upload progress bars with percentages and transferred size for diary submission and attachments added to existing cards.",
+    "Added a saving indicator after transfer completes and disabled repeat submissions while uploads are in progress.",
+    "Added upload error feedback that preserves entered text and selected files, including messages for oversized requests and connection failures."
+  ],
   "0.5.0": [
     "Added an attachment viewer for images, MP4 video, and MP3/M4A audio, with previous/next navigation and downloads for patients and therapists.",
     "Added administrator-configurable attachment limits, defaulting to 100 MiB per file and 500 MiB per card, with upload queue usage indicators and server-side validation.",

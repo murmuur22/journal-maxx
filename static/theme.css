@@ -1730,6 +1730,13 @@ html.image-viewer-open { overflow: hidden; }
 }
 
 .attachment-quota { margin: 1rem 0; padding: .8rem; border: 1px solid #555; background: #080808; }
+.attachment-upload { margin: 1rem 0; padding: 1rem; border: 2px solid #eee; background: #080808; }
+.attachment-upload[hidden] { display: none; }
+.attachment-upload p { margin: .4rem 0; font-size: .8rem; line-height: 1.5; overflow-wrap: anywhere; }
+.attachment-upload [data-upload-status] { font-weight: 700; }
+.attachment-upload progress { width: 100%; height: 14px; margin: .6rem 0; accent-color: #eee; }
+.attachment-upload.is-error { border-color: #ff7b8c; }
+.attachment-upload.is-error [data-upload-status] { color: #ff7b8c; }
 .attachment-quota p { margin: .4rem 0; font-size: .75rem; line-height: 1.5; }
 .attachment-quota progress { display: block; width: 100%; height: 8px; margin: .75rem 0; accent-color: #eee; }
 .attachment-quota small { color: #999; font-size: .65rem; }
