@@ -628,6 +628,11 @@ class DiaryTests(TestCase):
         detail = client.get(reverse("journal:detail", args=[card.id]))
         self.assertContains(detail, "attachment-masonry")
         self.assertContains(detail, "after-submit.png")
+        self.assertContains(detail, 'data-image-viewer aria-haspopup="dialog"')
+        self.assertContains(detail, 'id="image-viewer"')
+        self.assertContains(detail, 'data-image-previous')
+        self.assertContains(detail, 'data-image-next')
+        self.assertNotContains(detail, "in a new tab")
         self.assertContains(detail, "attachment-file-list")
         self.assertContains(detail, "VIEW ↗")
         inline = client.get(reverse("journal:attachment", args=[card.id, attachment.id]) + "?inline=1")
@@ -639,6 +644,11 @@ class DiaryTests(TestCase):
         self.assertEqual(text_view["Content-Type"], "text/plain")
         self.assertIn("inline", text_view["Content-Disposition"])
         self.assertEqual(text_view["Content-Security-Policy"], "sandbox; default-src 'none'")
+
+        client.force_login(self.reviewer)
+        reviewer_detail = client.get(reverse("review:detail", args=[card.id]))
+        self.assertContains(reviewer_detail, 'id="image-viewer"')
+        self.assertContains(reviewer_detail, reverse("review:attachment", args=[card.id, attachment.id]) + "?inline=1")
 
     def test_only_card_owner_can_append_attachments(self):
         card = self.submitted(); client = Client(); client.force_login(self.reviewer)

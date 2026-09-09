@@ -1704,3 +1704,63 @@ th[aria-sort="ascending"] .sort-heading i, th[aria-sort="descending"] .sort-head
   .card-counts > span + span::before { content: "//"; margin-right: .2rem; color: #666; }
   .review-card-meta .patient-unread-comments { margin-left: 0; }
 }
+
+html.image-viewer-open { overflow: hidden; }
+.image-viewer { width: min(1100px, calc(100vw - 3rem)); height: min(850px, calc(100dvh - 3rem)); max-width: none; max-height: none; padding: 0; border: 2px solid #eee; background: #080808; color: #eee; box-shadow: 8px 8px 0 #333; }
+.image-viewer[open] { display: flex; flex-direction: column; }
+.image-viewer::backdrop { background: #000e; }
+.image-viewer-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem 1rem; border-bottom: 1px solid #444; }
+.image-viewer-toolbar > div { min-width: 0; }
+.image-viewer-toolbar h2 { margin: 0 0 .35rem; font: 800 .7rem ui-monospace, monospace; text-transform: uppercase; letter-spacing: .1em; color: #aaa; }
+.image-viewer-toolbar p { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .85rem; }
+.image-viewer button { flex: 0 0 auto; min-width: 44px; min-height: 44px; padding: .4rem .65rem; font-size: 1.2rem; box-shadow: none; }
+.image-viewer-stage { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: .75rem; background: #000; }
+.image-viewer-stage img { width: 100%; height: 100%; object-fit: contain; }
+.image-viewer-stage [hidden], .image-viewer-controls [hidden] { display: none; }
+.image-viewer-stage p { max-width: 32rem; padding: 1rem; text-align: center; color: #aaa; font-size: .85rem; }
+.image-viewer-controls { display: flex; align-items: center; gap: .75rem; padding: .75rem 1rem; border-top: 1px solid #444; }
+.image-viewer-controls span { font-size: .8rem; }
+.image-viewer-controls a { display: flex; align-items: center; min-height: 44px; margin-left: auto; color: #eee; font-size: .7rem; text-decoration: none; }
+.image-viewer a:focus-visible, .image-viewer button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+@media (max-width: 720px) {
+  .image-viewer { width: 100%; height: 100dvh; margin: 0; border: 0; box-shadow: none; }
+  .image-viewer-toolbar { padding: calc(.65rem + env(safe-area-inset-top)) max(.75rem, env(safe-area-inset-right)) .65rem max(.75rem, env(safe-area-inset-left)); }
+  .image-viewer-controls { gap: .5rem; padding: .65rem max(.75rem, env(safe-area-inset-right)) calc(.65rem + env(safe-area-inset-bottom)) max(.75rem, env(safe-area-inset-left)); }
+  .image-viewer-stage { padding: .25rem; }
+}
+
+.attachment-quota { margin: 1rem 0; padding: .8rem; border: 1px solid #555; background: #080808; }
+.attachment-quota p { margin: .4rem 0; font-size: .75rem; line-height: 1.5; }
+.attachment-quota progress { display: block; width: 100%; height: 8px; margin: .75rem 0; accent-color: #eee; }
+.attachment-quota small { color: #999; font-size: .65rem; }
+.attachment-quota [data-attachment-warning] { color: #ff7b8c; font-weight: 700; }
+.is-over-limit .attachment-quota, .attachment-selection .is-oversized { border-color: #ff7b8c; }
+.attachment-selection .is-oversized small { color: #ff7b8c; font-size: .65rem; }
+.panel.attachment-limits { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .65rem 1.5rem; padding: 1rem 1.2rem; border-left-width: 4px; box-shadow: none; }
+.attachment-limits-heading h2 { margin: 0 0 .3rem; padding: 0; border: 0; font-size: 1rem; }
+.attachment-limits small { color: #999; font-size: .65rem; line-height: 1.4; }
+.attachment-limits form { display: grid; grid-template-columns: 110px 110px auto; align-items: end; gap: .75rem; margin: 0; }
+.attachment-limit-field { min-width: 0; }
+.attachment-limit-field label { margin: 0 0 .3rem; font-size: .6rem; }
+.attachment-limit-field input { margin: 0; padding: .5rem .6rem; min-height: 40px; }
+.attachment-limits form button { min-height: 40px; padding: .6rem .8rem; font-size: .65rem; }
+.attachment-limits-note, .attachment-limits-errors { grid-column: 1 / -1; }
+.attachment-limit-field .errorlist { margin: .4rem 0 0; }
+@media (max-width: 900px) {
+  .panel.attachment-limits { grid-template-columns: minmax(0, 1fr); }
+  .attachment-limits form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+}
+@media (max-width: 480px) {
+  .attachment-limits form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .attachment-limits form button { grid-column: 1 / -1; }
+}
+.attachment-media-list { display: grid; gap: .6rem; margin: .75rem 0; }
+.attachment-media { display: flex; align-items: center; gap: 1rem; padding: 1rem; border: 1px solid #555; background: #080808; color: #fff; text-decoration: none; }
+.attachment-media > span { font-size: 1.5rem; }
+.attachment-media > div { min-width: 0; }
+.attachment-media b { display: block; overflow-wrap: anywhere; font-size: .85rem; }
+.attachment-media small { display: block; margin-top: .4rem; font-size: .65rem; color: #aaa; }
+.attachment-media:hover, .attachment-media:focus-visible { border-color: #fff; background: #171717; }
+.image-viewer-stage video { width: 100%; height: 100%; object-fit: contain; }
+.image-viewer-stage audio { width: min(100%, 580px); }
+.image-viewer-stage [data-image-status] { position: absolute; background: #080808ed; pointer-events: none; }

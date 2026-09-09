@@ -60,6 +60,28 @@ class Card(models.Model):
         constraints = [models.UniqueConstraint(fields=["patient", "local_date"], name="one_card_per_patient_day")]
         ordering = ["-local_date"]
 
+class AttachmentSettings(models.Model):
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    file_limit_mib = models.PositiveIntegerField(default=100)
+    card_limit_mib = models.PositiveIntegerField(default=500)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=models.Q(id=1), name="attachment_settings_singleton"),
+            models.CheckConstraint(condition=models.Q(file_limit_mib__gt=0, card_limit_mib__gte=models.F("file_limit_mib")), name="attachment_limits_valid"),
+        ]
+
+    @classmethod
+    def current(cls):
+        return cls.objects.get_or_create(pk=1)[0]
+
+    @property
+    def file_limit_bytes(self): return self.file_limit_mib * 1024 * 1024
+
+    @property
+    def card_limit_bytes(self): return self.card_limit_mib * 1024 * 1024
+
+
 class Attachment(models.Model):
     card = models.ForeignKey(Card, on_delete=models.CASCADE, related_name="attachments")
     stored_name = models.CharField(max_length=255)

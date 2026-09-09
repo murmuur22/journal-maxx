@@ -211,3 +211,34 @@ git push origin v0.2.1
 ```
 
 The release workflow tests the tagged commit, publishes the container and provenance attestation, then creates the GitHub Release. A normal push to `main` never updates production.
+
+## Attachment uploads and media playback
+
+Administrators can edit **Maintenance → Attachment limits** in whole MiB. The
+initial limits are 100 MiB per file and 500 MiB of attachments per card. Limits
+apply to new uploads across all patients, including additions to existing cards;
+reducing them never removes existing files. Journal text, addendums, and therapist
+comments are outside this attachment budget.
+
+MP4 video and MP3/M4A audio use the authenticated attachment endpoint for playback
+and single-byte-range requests for seeking. Preserve `Range`, `If-Range`,
+`Content-Range`, and `Accept-Ranges` through the reverse proxy. Do not configure a
+public static alias or shared cache for the card volume. Playback uses the
+browser's supported codecs; files are not transcoded, and downloads remain
+available when playback fails.
+
+The application settings do not change reverse-proxy limits. For the default
+500 MiB batch budget, allow at least 510 MiB per request to leave room for multipart
+metadata, and increase this ceiling when increasing the card limit. For Nginx,
+set `client_max_body_size 510m` on the authenticated journal upload routes and
+allow suitable upload/read timeouts (for example, 300 seconds). Apply equivalent
+settings to your actual proxy; any upstream proxy must also permit that size.
+Ensure proxy request buffering and Django's temporary-upload directory have
+space for concurrent upload batches. Attachments are written and hashed in
+chunks, but temporary disk space is still required.
+
+The container's `DIARY_REQUEST_TIMEOUT` defaults to 300 seconds and controls
+Gunicorn's worker timeout. Increase it for slower uploads if needed. Proxy limits
+or timeouts can reject a request before Django receives it even if its queue fits
+the configured app budget. Validate a representative large upload and seekable
+playback through the production proxy before advertising increased limits.

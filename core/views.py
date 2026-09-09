@@ -26,8 +26,10 @@ from django.views.decorators.http import require_http_methods, require_POST
 from django.views.decorators.cache import never_cache
 from .decorators import role_required
 from .context_processors import get_reviewer_patient
-from .forms import AddendumForm, ReviewerStatusForm, TherapistCommentForm
-from .models import AuditEvent, Card, CareRelationship, Emotion, FeedbackReport, FormDefinition, Invite, ReviewerMetadata, User
+from .attachment_uploads import policy_context, ALLOWED_TYPES
+from .attachment_delivery import attachment_response
+from .forms import AttachmentLimitsForm, AddendumForm, ReviewerStatusForm, TherapistCommentForm
+from .models import AttachmentSettings, AuditEvent, Card, CareRelationship, Emotion, FeedbackReport, FormDefinition, Invite, ReviewerMetadata, User
 from .services import add_addendum, add_card_attachments, add_therapist_comment, audit, card_directory, card_file_inventory, comments_filename, purge_card, quarantine_card, restore_card, storage_status, submit_card, verify_card_integrity
 from .security import encrypt_secret, generate_totp_secret, issue_recovery_codes, verify_privileged_credential, verify_second_factor, verify_totp
 from .updater import UpdaterUnavailable, updater_request
@@ -175,7 +177,7 @@ def journal_today(request):
                 messages.success(request, "Diary card locked and submitted."); return redirect("journal:detail", card_id=card.id)
             except Exception as exc: messages.error(request, str(exc))
     custom_values = {item.get("key"): item.get("value") for item in card.draft_data.get("custom", [])}
-    return render(request, "journal/today.html", {"card": card, "emotions": emotions, "draft": card.draft_data, "custom_fields": custom_fields, "custom_values": custom_values, "storage": storage_status()})
+    return render(request, "journal/today.html", {**policy_context(), "card": card, "emotions": emotions, "draft": card.draft_data, "custom_fields": custom_fields, "custom_values": custom_values, "storage": storage_status()})
 
 @role_required(User.Role.PATIENT)
 def journal_history(request):
@@ -320,8 +322,9 @@ def card_detail(request, card_id):
         card.therapist_comments.filter(patient_read_at__isnull=True).update(patient_read_at=timezone.now())
     attachments = list(card.attachments.all())
     image_attachments = [item for item in attachments if item.content_type.startswith("image/")]
-    file_attachments = [item for item in attachments if not item.content_type.startswith("image/")]
-    return render(request, "card_detail.html", {"card": card, "rendered": rendered, "raw_mode": raw_mode, "raw_documents": raw_documents, "meta": meta, "addendum_form": AddendumForm(), "reviewer_status_form": ReviewerStatusForm(initial={"is_read": getattr(meta, "is_read", False)}), "comment_form": TherapistCommentForm(), "image_attachments": image_attachments, "file_attachments": file_attachments})
+    media_attachments = [item for item in attachments if item.content_type.startswith(("audio/", "video/"))]
+    file_attachments = [item for item in attachments if not item.content_type.startswith(("image/", "audio/", "video/"))]
+    return render(request, "card_detail.html", {**policy_context(sum(item.size for item in attachments)), "media_attachments": media_attachments, "card": card, "rendered": rendered, "raw_mode": raw_mode, "raw_documents": raw_documents, "meta": meta, "addendum_form": AddendumForm(), "reviewer_status_form": ReviewerStatusForm(initial={"is_read": getattr(meta, "is_read", False)}), "comment_form": TherapistCommentForm(), "image_attachments": image_attachments, "file_attachments": file_attachments})
 
 @role_required(User.Role.PATIENT)
 @require_POST
@@ -343,17 +346,15 @@ def card_attachment_add(request, card_id):
     return redirect("journal:detail", card_id=card.id)
 
 @role_required(User.Role.PATIENT, User.Role.REVIEWER)
+@require_http_methods(["GET", "HEAD"])
 def attachment_download(request, card_id, attachment_id):
     card = _card_for_user(request.user, card_id); attachment = get_object_or_404(card.attachments, id=attachment_id)
     if not storage_status()["available"]: return HttpResponse("Card storage offline", status=503)
     path = card_directory(card) / attachment.stored_name
     if not path.is_file(): raise Http404
-    inline_types = {"image/jpeg", "image/png", "image/webp", "application/pdf", "text/plain", "text/markdown"}
-    inline = request.GET.get("inline") == "1" and attachment.content_type in inline_types
+    inline = request.GET.get("inline") == "1" and attachment.content_type in ALLOWED_TYPES
     audit(request.user, "attachment.viewed" if inline else "attachment.downloaded", card.id, request=request)
-    response = FileResponse(path.open("rb"), as_attachment=not inline, filename=attachment.original_name, content_type=attachment.content_type if inline else "application/octet-stream")
-    if inline: response["Content-Security-Policy"] = "sandbox; default-src 'none'"
-    return response
+    return attachment_response(request, path, attachment, inline)
 
 @role_required(User.Role.REVIEWER)
 def review_list(request):
@@ -491,7 +492,7 @@ def _recent_activity(events):
     return activity
 
 @role_required(User.Role.ADMIN)
-def control_dashboard(request):
+def control_dashboard(request, limits_form=None, response_status=200):
     form_def = FormDefinition.objects.filter(active=True).first()
     custom_fields, active_fields, _ = _form_builder_state(request)
     storage = storage_status()
@@ -521,7 +522,7 @@ def control_dashboard(request):
     events = list(AuditEvent.objects.select_related("actor")[:100])
     emotions = list(Emotion.objects.order_by("sort_order"))
     feedback_reports = list(FeedbackReport.objects.select_related("author", "archived_by"))
-    return render(request, "control/dashboard.html", {"journalmax_version": settings.JOURNALMAX_VERSION, "storage": storage, "journal_storage": {"bytes": stored_file_bytes, "capacity": journal_capacity, "percent": journal_storage_percent, "volume_percent": journal_volume_percent}, "counts": {"users": User.objects.count(), "cards": Card.objects.count(), "submitted": Card.objects.filter(status=Card.Status.SUBMITTED).count(), "files": stored_file_count}, "maintenance_cards": maintenance_cards, "events": events, "recent_activity": _recent_activity(events[:12]), "users": users, "patient_accounts": patient_accounts, "emotions": emotions, "custom_fields": custom_fields, "form_version": getattr(form_def, "version", None), "has_staged_changes": custom_fields != active_fields, "feedback_reports": feedback_reports, "active_feedback_count": sum(report.archived_at is None for report in feedback_reports)})
+    return render(request, "control/dashboard.html", {**policy_context(), "attachment_limits_form": limits_form if limits_form is not None else AttachmentLimitsForm(instance=AttachmentSettings.current()), "journalmax_version": settings.JOURNALMAX_VERSION, "storage": storage, "journal_storage": {"bytes": stored_file_bytes, "capacity": journal_capacity, "percent": journal_storage_percent, "volume_percent": journal_volume_percent}, "counts": {"users": User.objects.count(), "cards": Card.objects.count(), "submitted": Card.objects.filter(status=Card.Status.SUBMITTED).count(), "files": stored_file_count}, "maintenance_cards": maintenance_cards, "events": events, "recent_activity": _recent_activity(events[:12]), "users": users, "patient_accounts": patient_accounts, "emotions": emotions, "custom_fields": custom_fields, "form_version": getattr(form_def, "version", None), "has_staged_changes": custom_fields != active_fields, "feedback_reports": feedback_reports, "active_feedback_count": sum(report.archived_at is None for report in feedback_reports)}, status=response_status)
 
 @role_required(User.Role.ADMIN)
 @require_POST
@@ -893,3 +894,18 @@ def control_purge(request, card_id):
             messages.success(request, "Card permanently deleted. The patient can now create a new entry for that date.")
         except Exception as exc: messages.error(request, str(exc))
     return redirect("control:dashboard")
+
+
+@role_required(User.Role.ADMIN)
+@require_POST
+@transaction.atomic
+def control_attachment_limits(request):
+    limits = AttachmentSettings.objects.select_for_update().get(pk=AttachmentSettings.current().pk)
+    old = {"file_limit_mib": limits.file_limit_mib, "card_limit_mib": limits.card_limit_mib}
+    form = AttachmentLimitsForm(request.POST, instance=limits)
+    if not form.is_valid():
+        return control_dashboard(request, limits_form=form, response_status=400)
+    form.save()
+    audit(request.user, "attachment_limits.updated", "global", {"old": old, "new": form.cleaned_data}, request)
+    messages.success(request, "Attachment limits updated. Existing attachments are unchanged.")
+    return redirect(reverse("control:dashboard") + "#maintenance")

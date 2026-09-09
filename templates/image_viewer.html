@@ -1,0 +1,18 @@
+<dialog class="image-viewer" id="image-viewer" aria-labelledby="image-viewer-title">
+  <div class="image-viewer-toolbar">
+    <div><h2 id="image-viewer-title">Attachment viewer</h2><p data-image-name></p></div>
+    <button type="button" data-image-close aria-label="Close attachment viewer" autofocus>×</button>
+  </div>
+  <div class="image-viewer-stage">
+    <img data-viewer-image alt="" hidden>
+    <video data-viewer-video controls playsinline preload="metadata" hidden></video>
+    <audio data-viewer-audio controls preload="metadata" hidden></audio>
+    <p data-image-status role="status">Loading attachment…</p>
+  </div>
+  <div class="image-viewer-controls">
+    <button type="button" data-image-previous aria-label="Previous attachment">←</button>
+    <span data-image-position aria-live="polite" aria-atomic="true"></span>
+    <button type="button" data-image-next aria-label="Next attachment">→</button>
+    <a data-image-download download>DOWNLOAD ↓</a>
+  </div>
+</dialog>

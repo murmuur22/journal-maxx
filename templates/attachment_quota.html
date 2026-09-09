@@ -1,0 +1,7 @@
+<div class="attachment-quota" data-attachment-quota>
+  <p>{{ attachment_formats_short }}</p>
+  <p><strong>{{ attachment_policy.file_limit_mib }} MiB per file</strong> · <strong>{{ attachment_policy.card_limit_mib }} MiB per card</strong></p>
+  <p data-attachment-usage>{{ attachment_used_mib|floatformat:2 }} MiB used</p>
+  <progress data-attachment-progress max="{{ attachment_policy.card_limit_bytes }}" value="{{ attachment_used_bytes }}" aria-label="Attachment storage used including queued files"></progress>
+  <p data-attachment-warning role="status" aria-live="polite" aria-atomic="true" hidden></p>
+</div>

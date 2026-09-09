@@ -12,9 +12,8 @@ from django.db import models, transaction
 from django.utils import timezone
 from .models import Addendum, Attachment, AuditEvent, Card, TherapistComment, User
 
-ALLOWED_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf", "text/plain": ".txt", "text/markdown": ".md"}
-MAX_FILE_SIZE = 25 * 1024 * 1024
-MAX_CARD_UPLOADS = 100 * 1024 * 1024
+from .attachment_uploads import ALLOWED_TYPES, prepare_uploads, atomic_write_upload, file_checksum
+
 CARD_VOLUME_FORMAT = "journalmax-card-volume"
 CARD_VOLUME_SCHEMA_VERSION = 1
 
@@ -175,10 +174,10 @@ def verify_card_integrity(card, volume_status=None):
         if sha256_bytes(markdown_path.read_bytes()) != card.checksum: return "conflict"
         for item in card.attachments.all():
             path = folder / item.stored_name
-            if not path.is_file() or sha256_bytes(path.read_bytes()) != item.checksum: return "conflict"
+            if not path.is_file() or file_checksum(path) != item.checksum: return "conflict"
         for item in card.addenda.all():
             path = folder / item.filename
-            if not path.is_file() or sha256_bytes(path.read_bytes()) != item.checksum: return "conflict"
+            if not path.is_file() or file_checksum(path) != item.checksum: return "conflict"
         if card.therapist_comments.exists():
             path = folder / comments_filename(card)
             if not card.comments_checksum or not path.is_file() or sha256_bytes(path.read_bytes()) != card.comments_checksum: return "conflict"
@@ -218,6 +217,7 @@ def submit_card(card, data, uploads, actor, request=None):
     if card.status != Card.Status.DRAFT: raise ValidationError("Only drafts can be submitted.")
     if not data.get("emotions"): raise ValidationError("Choose at least one significant emotion.")
     require_card_storage()
+    prepared = prepare_uploads(list(uploads), 0, valid_signature)
     for emotion in data["emotions"]:
         try: emotion["intensity"] = max(1, min(5, int(emotion.get("intensity") or 3)))
         except (TypeError, ValueError): emotion["intensity"] = 3
@@ -230,19 +230,14 @@ def submit_card(card, data, uploads, actor, request=None):
         markdown = render_markdown(card, data).encode("utf-8")
         markdown_name = f"{prefix}_diary.md"
         atomic_write(folder / markdown_name, markdown)
-        if sum(upload.size for upload in uploads) > MAX_CARD_UPLOADS: raise ValidationError("Attachments exceed the 100 MiB card limit.")
-        for upload in uploads:
-            if upload.size > MAX_FILE_SIZE or upload.content_type not in ALLOWED_TYPES:
-                raise ValidationError(f"Unsupported attachment: {upload.name}")
-            raw = upload.read()
-            if not valid_signature(upload.content_type, raw): raise ValidationError(f"Attachment content does not match its declared type: {upload.name}")
+        for upload, kind in prepared:
             clean = safe_name(upload.name)
             stem, suffix = Path(clean).stem, Path(clean).suffix.lower()
             candidate, counter = f"{prefix}_{stem}{suffix}", 2
             while (folder / candidate).exists():
                 candidate = f"{prefix}_{stem}_{counter}{suffix}"; counter += 1
-            atomic_write(folder / candidate, raw)
-            Attachment.objects.create(card=card, stored_name=candidate, original_name=clean, content_type=upload.content_type, size=len(raw), checksum=sha256_bytes(raw))
+            size, checksum = atomic_write_upload(folder / candidate, upload)
+            Attachment.objects.create(card=card, stored_name=candidate, original_name=clean, content_type=kind, size=size, checksum=checksum)
         card.status = Card.Status.SUBMITTED
         card.content_index = data
         card.draft_data = {}
@@ -263,28 +258,20 @@ def add_card_attachments(card, uploads, actor, request=None):
     uploads = list(uploads)
     if not uploads: raise ValidationError("Choose at least one attachment.")
     existing_size = card.attachments.aggregate(total=models.Sum("size"))["total"] or 0
-    if existing_size + sum(upload.size for upload in uploads) > MAX_CARD_UPLOADS:
-        raise ValidationError("Attachments exceed the 100 MiB card limit.")
-    prepared = []
-    for upload in uploads:
-        if upload.size > MAX_FILE_SIZE or upload.content_type not in ALLOWED_TYPES:
-            raise ValidationError(f"Unsupported attachment: {upload.name}")
-        raw = upload.read()
-        if not valid_signature(upload.content_type, raw):
-            raise ValidationError(f"Attachment content does not match its declared type: {upload.name}")
-        prepared.append((upload, raw, safe_name(upload.name)))
+    prepared = prepare_uploads(uploads, existing_size, valid_signature)
     folder = card_directory(card)
     prefix = card.local_date.strftime("%y%m%d")
     written = []
     try:
-        for upload, raw, clean in prepared:
+        for upload, kind in prepared:
+            clean = safe_name(upload.name)
             stem, suffix = Path(clean).stem, Path(clean).suffix.lower()
             candidate, counter = f"{prefix}_{stem}{suffix}", 2
             while (folder / candidate).exists():
                 candidate = f"{prefix}_{stem}_{counter}{suffix}"; counter += 1
             path = folder / candidate
-            atomic_write(path, raw); written.append(path)
-            Attachment.objects.create(card=card, stored_name=candidate, original_name=clean, content_type=upload.content_type, size=len(raw), checksum=sha256_bytes(raw))
+            size, checksum = atomic_write_upload(path, upload); written.append(path)
+            Attachment.objects.create(card=card, stored_name=candidate, original_name=clean, content_type=kind, size=size, checksum=checksum)
         audit(actor, "card.attachments_added", card.id, {"count": len(prepared)}, request)
     except Exception:
         for path in written:

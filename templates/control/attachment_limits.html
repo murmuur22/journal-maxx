@@ -1,0 +1,10 @@
+<section class="panel attachment-limits" aria-labelledby="attachment-limits-title">
+  <div class="attachment-limits-heading"><h2 id="attachment-limits-title">Attachment limits</h2><small>Applies to all patients. Existing files stay available.</small></div>
+  <form method="post" action="{% url 'control:attachment_limits' %}#maintenance">
+    {% csrf_token %}
+    {% for field in attachment_limits_form %}<div class="attachment-limit-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>{% endfor %}
+    <button class="primary">SAVE LIMITS →</button>
+    {% if attachment_limits_form.non_field_errors %}<div class="attachment-limits-errors">{{ attachment_limits_form.non_field_errors }}</div>{% endif %}
+  </form>
+  <small class="attachment-limits-note">Attachments only; excludes journal text and comments. MiB = 1,048,576 bytes. Server upload limits may also apply.</small>
+</section>

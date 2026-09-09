@@ -1,4 +1,11 @@
 {
+  "0.5.0": [
+    "Added an attachment viewer for images, MP4 video, and MP3/M4A audio, with previous/next navigation and downloads for patients and therapists.",
+    "Added administrator-configurable attachment limits, defaulting to 100 MiB per file and 500 MiB per card, with upload queue usage indicators and server-side validation.",
+    "Added authenticated media streaming with byte-range requests for seeking, plus chunked attachment storage and checksum verification.",
+    "Added a configurable upload worker timeout and documented reverse-proxy requirements for larger uploads and media playback.",
+    "Refresh archive pages restored with browser Back navigation."
+  ],
   "0.4.2": [
     "Added a patient notification bell with an unread counter and a menu linking each unread therapist comment directly to its diary card.",
     "Added unread comment badges to the patient archive and calendar. Opening a card marks its comments as read, and returning with the browser Back button refreshes the counts.",
