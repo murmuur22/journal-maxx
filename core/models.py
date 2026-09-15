@@ -1,3 +1,4 @@
+from datetime import time
 import secrets
 import uuid
 from django.contrib.auth.models import AbstractUser
@@ -54,6 +55,7 @@ class Card(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
+    previous_status = models.CharField(max_length=16, blank=True)
     quarantined_at = models.DateTimeField(null=True, blank=True)
     purge_after = models.DateTimeField(null=True, blank=True)
     class Meta:
@@ -82,7 +84,26 @@ class AttachmentSettings(models.Model):
     def card_limit_bytes(self): return self.card_limit_mib * 1024 * 1024
 
 
+class RecordingSchedule(models.Model):
+    # Effective-date rows preserve today's schedule when an admin changes tomorrow.
+    effective_date = models.DateField(unique=True)
+    opens_at = models.TimeField(default=time(19))
+
+
+class QuickNote(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    card = models.ForeignKey(Card, on_delete=models.CASCADE, related_name="quick_notes")
+    filename = models.CharField(max_length=255, blank=True)
+    checksum = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+
 class Attachment(models.Model):
+    created_at = models.DateTimeField(default=timezone.now)
+    quick_note = models.ForeignKey(QuickNote, null=True, blank=True, on_delete=models.SET_NULL, related_name="attachments")
     card = models.ForeignKey(Card, on_delete=models.CASCADE, related_name="attachments")
     stored_name = models.CharField(max_length=255)
     original_name = models.CharField(max_length=255)

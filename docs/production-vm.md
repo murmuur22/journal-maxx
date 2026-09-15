@@ -212,6 +212,21 @@ git push origin v0.2.1
 
 The release workflow tests the tagged commit, publishes the container and provenance attestation, then creates the GitHub Release. A normal push to `main` never updates production.
 
+## Checking memory usage
+
+Run `free -h` on the VM and `docker stats --no-stream` to compare host memory
+with the application container. In `free`, use `available` to assess remaining
+headroom; `buff/cache` includes reclaimable filesystem cache. A large cache
+alone does not indicate an application memory leak. Record measurements while
+idle and after representative uploads, playback, and admin visits before tuning
+worker counts or container limits.
+
+The admin dashboard inventories filenames and sizes without hashing the entire
+archive. Use **Verify** beside an entry in Maintenance to check its tracked files
+on demand. **Unchecked** means no check was requested on this page load; it does
+not indicate a failure. Patient and therapist entry views still verify integrity
+before displaying an entry.
+
 ## Attachment uploads and media playback
 
 Administrators can edit **Maintenance → Attachment limits** in whole MiB. The
@@ -242,3 +257,28 @@ Gunicorn's worker timeout. Increase it for slower uploads if needed. Proxy limit
 or timeouts can reject a request before Django receives it even if its queue fits
 the configured app budget. Validate a representative large upload and seekable
 playback through the production proxy before advertising increased limits.
+
+## Staged daily recording
+
+The application uses the configured `DIARY_TIME_ZONE` for both diary dates and
+the daily cutoff. The full form opens at 19:00 by default and closes at midnight.
+**Maintenance → Evening reflection** offers **Save for tomorrow** and **Apply
+now**. Apply now changes today’s window immediately and replaces any opening
+time scheduled for tomorrow; refresh the patient page to see the new phase.
+No scheduler is needed for opening, closing, or archive statuses;
+these are evaluated from server time on each request.
+
+This update adds recording schedules, quick-note metadata, attachment timestamps,
+and the prior status needed to restore quarantined incomplete records. Apply
+migrations through the existing deployment workflow after a SQLite-consistent
+backup. Existing diary Markdown files are not rewritten. Early files live in the
+same card directory as the eventual full diary and follow the existing archive
+backup, integrity, quarantine, and recovery procedures.
+
+Assigned therapists see unsubmitted saved notes, files, and form drafts only
+after the day closes. Incomplete and missing days cannot be completed later.
+The metadata API retains its existing stored statuses; the three archive labels
+are a presentation of the date and saved content. Emotion trends use submitted
+cards only. Monitor storage readiness and existing audit events, including
+`card.quick_note_created` and `recording.schedule_changed`, when checking saves
+or schedule changes. Audit metadata contains no quick-note text.

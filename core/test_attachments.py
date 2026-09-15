@@ -33,11 +33,11 @@ class AttachmentFeatureTests(TestCase):
     def test_progress_upload_submission_and_validation(self):
         self.client.force_login(self.patient)
         url = reverse('journal:today')
-        response = self.client.post(url, {'action': 'submit', 'attachments': upload()}, HTTP_ACCEPT='application/json')
+        response = self.client.post(url, {'recording_date': '2026-08-16', 'action': 'submit', 'attachments': upload()}, HTTP_ACCEPT='application/json')
         self.assertEqual(response.status_code, 400)
         self.assertIn('emotion', response.json()['error'])
         self.assertEqual(Card.objects.get(patient=self.patient).status, Card.Status.DRAFT)
-        response = self.client.post(url, {'action': 'submit', 'emotions': ['joy'], 'intensity_joy': '3', 'attachments': upload()}, HTTP_ACCEPT='application/json')
+        response = self.client.post(url, {'recording_date': '2026-08-16', 'action': 'submit', 'emotions': ['joy'], 'intensity_joy': '3', 'attachments': upload()}, HTTP_ACCEPT='application/json')
         self.assertEqual(response.status_code, 200)
         card = Card.objects.get(patient=self.patient)
         self.assertEqual(card.status, Card.Status.SUBMITTED)

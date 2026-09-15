@@ -149,7 +149,8 @@
         uploadDetail.textContent = message;
       };
       const request = new XMLHttpRequest();
-      request.open("POST", form.action);
+      // The diary's action buttons mask the form.action DOM property.
+      request.open("POST", form.getAttribute("action") || window.location.href);
       request.setRequestHeader("Accept", "application/json");
       request.responseType = "json";
       request.upload.addEventListener("progress", (e) => {

@@ -2,9 +2,10 @@ import hashlib
 import json
 import secrets
 import tempfile
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
@@ -16,8 +17,17 @@ from .models import ApiToken, AuditEvent, Card, CareRelationship, Emotion, Feedb
 from .security import decrypt_secret, encrypt_secret, generate_totp_secret, totp, verify_totp
 from .services import add_addendum, card_directory, card_file_inventory, comments_filename, quarantine_card, restore_card, storage_status, submit_card, verify_card_integrity
 
+def submit_fixture_card(card, *args, **kwargs):
+    """Create historical fixtures inside that date's real submission window."""
+    with patch("django.utils.timezone.now", return_value=timezone.make_aware(datetime.combine(card.local_date, time(20)))):
+        return submit_card(card, *args, **kwargs)
+
+
 class DiaryTests(TestCase):
     def setUp(self):
+        clock = patch("django.utils.timezone.now", return_value=timezone.make_aware(datetime(2026, 8, 16, 20)))
+        clock.start()
+        self.addCleanup(clock.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.override = override_settings(CARD_ROOT=Path(self.temp.name))
         self.override.enable()
@@ -32,7 +42,7 @@ class DiaryTests(TestCase):
         card = Card.objects.create(patient=self.patient, local_date=date(2026, 8, 15))
         upload = SimpleUploadedFile("image one.txt", b"safe context", content_type="text/plain")
         data = {"emotions": [{"id": "joy", "label": "Joy", "intensity": 4, "note": "A bright moment"}], "activities": "Walked", "journal": "Felt present."}
-        return submit_card(card, data, [upload], self.patient)
+        return submit_fixture_card(card, data, [upload], self.patient)
 
     def test_login_is_minimal_authentication_form(self):
         response = self.client.get("/login/")
@@ -117,7 +127,7 @@ class DiaryTests(TestCase):
         self.assertNotIn("## What I did today", path.read_text())
         self.assertNotIn("## Reflection", path.read_text())
         self.assertTrue((card_directory(card) / "260815_image_one.txt").exists())
-        with self.assertRaises(Exception): submit_card(card, card.content_index, [], self.patient)
+        with self.assertRaises(Exception): submit_fixture_card(card, card.content_index, [], self.patient)
 
     def test_required_volume_marker_fails_closed_without_creating_card_files(self):
         with override_settings(CARD_VOLUME_REQUIRE_MARKER=True, CARD_VOLUME_ID=""):
@@ -126,7 +136,7 @@ class DiaryTests(TestCase):
             self.assertEqual(status["state"], "unrecognized")
             card = Card.objects.create(patient=self.patient, local_date=date(2026, 8, 13))
             with self.assertRaisesMessage(ValidationError, "Card storage offline"):
-                submit_card(card, {"emotions": [{"id": "joy", "label": "Joy", "intensity": 3}]}, [], self.patient)
+                submit_fixture_card(card, {"emotions": [{"id": "joy", "label": "Joy", "intensity": 3}]}, [], self.patient)
             self.assertFalse(card_directory(card).exists())
 
     def test_initialized_volume_is_recognized_and_can_be_pinned_by_id(self):
@@ -161,7 +171,7 @@ class DiaryTests(TestCase):
 
     def test_unanswered_diary_sections_start_collapsed(self):
         card = Card.objects.create(patient=self.patient, local_date=date(2026, 8, 14))
-        submit_card(card, {"emotions": [{"id": "joy", "label": "Joy", "intensity": 3, "note": ""}], "custom": [{"key": "optional", "label": "Optional prompt", "type": "long_text", "value": ""}]}, [], self.patient)
+        submit_fixture_card(card, {"emotions": [{"id": "joy", "label": "Joy", "intensity": 3, "note": ""}], "custom": [{"key": "optional", "label": "Optional prompt", "type": "long_text", "value": ""}]}, [], self.patient)
         self.client.force_login(self.patient)
         response = self.client.get(reverse("journal:detail", args=[card.id]))
         content = response.content.decode()
@@ -188,7 +198,7 @@ class DiaryTests(TestCase):
 
     def test_patient_login_handles_a_deleted_entry_for_today_without_404(self):
         card = Card.objects.create(patient=self.patient, local_date=timezone.localdate())
-        submit_card(card, {"emotions": [{"id": "joy", "label": "Joy", "intensity": 3, "note": ""}], "activities": "", "journal": "Today"}, [], self.patient)
+        submit_fixture_card(card, {"emotions": [{"id": "joy", "label": "Joy", "intensity": 3, "note": ""}], "activities": "", "journal": "Today"}, [], self.patient)
         quarantine_card(card, self.admin)
         response = self.client.post(reverse("login"), {"username": self.patient.username, "password": "a-long-test-password"}, follow=True)
         self.assertEqual(response.status_code, 200)
@@ -199,7 +209,7 @@ class DiaryTests(TestCase):
     def test_admin_can_permanently_delete_recently_deleted_card_and_patient_can_remake_it(self):
         card = Card.objects.create(patient=self.patient, local_date=timezone.localdate())
         old_id = card.id
-        submit_card(card, {"emotions": [{"id": "joy", "label": "Joy", "intensity": 3, "note": ""}], "activities": "", "journal": "Replace me"}, [], self.patient)
+        submit_fixture_card(card, {"emotions": [{"id": "joy", "label": "Joy", "intensity": 3, "note": ""}], "activities": "", "journal": "Replace me"}, [], self.patient)
         quarantine_card(card, self.admin)
         self.client.force_login(self.admin)
         dashboard = self.client.get(reverse("control:dashboard"))
@@ -312,6 +322,22 @@ class DiaryTests(TestCase):
         self.assertContains(response, "LOCAL DEV")
         self.assertNotContains(response, "Maintenance index")
         self.assertNotContains(response, "Sensitive follow-up content")
+
+    def test_dashboard_only_hashes_explicitly_selected_entry(self):
+        card = self.submitted()
+        self.client.force_login(self.admin)
+        url = reverse("control:dashboard")
+        with patch("core.views.verify_card_integrity", wraps=verify_card_integrity) as verify:
+            response = self.client.get(url)
+            verify.assert_not_called()
+            self.assertContains(response, "UNCHECKED")
+            response = self.client.get(url, {"verify": str(card.id)})
+            self.assertEqual(verify.call_count, 1)
+            self.assertEqual(verify.call_args.args[0].id, card.id)
+            self.assertEqual(response.context["maintenance_cards"][0]["integrity"], "verified")
+        (card_directory(card) / card.attachments.get().stored_name).write_text("tampered")
+        response = self.client.get(url, {"verify": str(card.id)})
+        self.assertEqual(response.context["maintenance_cards"][0]["integrity"], "conflict")
 
     def test_admin_audit_workspace_uses_compact_terminal_buffer(self):
         self.client.force_login(self.admin)
@@ -732,7 +758,7 @@ class DiaryTests(TestCase):
         fear = Emotion.objects.create(slug="fear", label="Fear", color="#ff3355")
         sadness = Emotion.objects.create(slug="sadness", label="Sadness", color="#5577ff")
         card = Card.objects.create(patient=self.patient, local_date=date(2026, 8, 13))
-        submit_card(card, {"emotions": [{"id": self.emotion.slug, "label": self.emotion.label, "intensity": 4}, {"id": fear.slug, "label": fear.label, "intensity": 5}, {"id": sadness.slug, "label": sadness.label, "intensity": 4}]}, [], self.patient)
+        submit_fixture_card(card, {"emotions": [{"id": self.emotion.slug, "label": self.emotion.label, "intensity": 4}, {"id": fear.slug, "label": fear.label, "intensity": 5}, {"id": sadness.slug, "label": sadness.label, "intensity": 4}]}, [], self.patient)
         self.client.force_login(self.patient)
         response = self.client.get(reverse("journal:trends"))
         timeline = json.loads(response.context["timeline_json"])
@@ -853,7 +879,7 @@ class DiaryTests(TestCase):
         second = User.objects.create_user(username="second-patient", password="a-long-test-password", role=User.Role.PATIENT)
         CareRelationship.objects.create(therapist=self.reviewer, patient=second)
         second_card = Card.objects.create(patient=second, local_date=date(2026, 8, 14))
-        submit_card(second_card, {"emotions": [{"id": "joy", "label": "Joy", "intensity": 2, "note": ""}], "activities": "Second account", "journal": "Different card"}, [], second)
+        submit_fixture_card(second_card, {"emotions": [{"id": "joy", "label": "Joy", "intensity": 2, "note": ""}], "activities": "Second account", "journal": "Different card"}, [], second)
         self.client.force_login(self.reviewer)
         response = self.client.get("/review/")
         self.assertContains(response, "patient")
@@ -861,5 +887,5 @@ class DiaryTests(TestCase):
         response = self.client.post(reverse("review:patient_select"), {"patient_id": second.id, "next": "/review/trends/?range=all"})
         self.assertRedirects(response, "/review/trends/?range=all")
         response = self.client.get("/review/")
-        self.assertEqual([card.id for card in response.context["cards"]], [second_card.id])
+        self.assertEqual([card.id for card in response.context["cards"] if card.archive_state == "complete"], [second_card.id])
         self.assertNotEqual(second_card.id, first_card.id)

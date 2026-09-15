@@ -1,4 +1,13 @@
 {
+  "0.6.0": [
+    "Added staged daily recording: timestamped Markdown quick notes and attachments before the evening diary form opens, with a default reflection window of 7 pm to midnight in the configured timezone.",
+    "Added shared administrator-controlled opening times with Apply now and Save for tomorrow options.",
+    "Added complete, incomplete, and missing days to patient and assigned-therapist archives from the patient’s join date, including read-only access to saved notes, attachments, and unfinished drafts after midnight.",
+    "Kept earlier notes and attachments hidden during reflection until the full card is submitted, while preserving existing post-submission addenda and uploads.",
+    "Preserved early files through full submission, enforced attachment quotas across recording stages, and added integrity checks and recovery support for incomplete records.",
+    "Reduced admin dashboard memory and file-reading work with on-demand integrity verification, streamed checksums, and leaner notification queries.",
+    "Fixed browser submission errors caused by action buttons masking the form URL, for both text-only saves and attachment uploads."
+  ],
   "0.5.1": [
     "Added upload progress bars with percentages and transferred size for diary submission and attachments added to existing cards.",
     "Added a saving indicator after transfer completes and disabled repeat submissions while uploads are in progress.",

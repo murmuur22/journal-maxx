@@ -3,8 +3,9 @@ import html
 import json
 import re
 import secrets
+import uuid
 from calendar import Calendar
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 import bleach
 import markdown
@@ -15,7 +16,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import connection, transaction
-from django.db.models import Avg, Count, Max, Q
+from django.db.models import Avg, Count, Max, Q, Sum
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -29,8 +30,10 @@ from .context_processors import get_reviewer_patient
 from .attachment_uploads import policy_context, ALLOWED_TYPES
 from .attachment_delivery import attachment_response
 from .forms import AttachmentLimitsForm, AddendumForm, ReviewerStatusForm, TherapistCommentForm
-from .models import AttachmentSettings, AuditEvent, Card, CareRelationship, Emotion, FeedbackReport, FormDefinition, Invite, ReviewerMetadata, User
+from .models import AttachmentSettings, RecordingSchedule, AuditEvent, Card, CareRelationship, Emotion, FeedbackReport, FormDefinition, Invite, ReviewerMetadata, User
 from .services import add_addendum, add_card_attachments, add_therapist_comment, audit, card_directory, card_file_inventory, comments_filename, purge_card, quarantine_card, restore_card, storage_status, submit_card, verify_card_integrity
+from .recording import archive_context, archive_state, boundary_context, opening_time, phase, require_phase
+from .services import save_quick_note
 from .security import encrypt_secret, generate_totp_secret, issue_recovery_codes, verify_privileged_credential, verify_second_factor, verify_totp
 from .updater import UpdaterUnavailable, updater_request
 
@@ -148,11 +151,16 @@ def _emotion_data(request):
 @require_http_methods(["GET", "POST"])
 def journal_today(request):
     local_date = timezone.localdate()
+    if request.method == "POST" and request.POST.get("recording_date") != local_date.isoformat():
+        return _recording_error(request, "This form belongs to a different day. Your input was not saved. Open Today for the new day.")
     form_def = FormDefinition.objects.filter(active=True).first()
     card, _ = Card.objects.get_or_create(patient=request.user, local_date=local_date, defaults={"form_version": form_def.version if form_def else 1})
     if card.status == Card.Status.QUARANTINED:
         return render(request, "journal/recently_deleted.html", {"card": card})
     if card.status != Card.Status.DRAFT: return redirect("journal:detail", card_id=card.id)
+    if phase(local_date) == "early":
+        if request.method == "POST": return _recording_error(request, "The full diary form has not opened yet.")
+        return _early_page(request, card)
     emotions = list(Emotion.objects.filter(active=True).order_by("sort_order", "label"))
     draft_emotions = {item.get("id"): item for item in card.draft_data.get("emotions", [])}
     for emotion in emotions:
@@ -168,7 +176,18 @@ def journal_today(request):
             custom.append({"key": key, "label": field["label"], "type": field["type"], "value": value})
         data = {"emotions": _emotion_data(request), "custom": custom}
         if request.POST.get("action") == "save":
-            card.draft_data = data; card.save(update_fields=["draft_data", "updated_at"]); messages.success(request, "Draft saved locally.")
+            try:
+                with transaction.atomic():
+                    Card.objects.filter(pk=card.pk).update(updated_at=timezone.now())
+                    card.refresh_from_db()
+                    require_phase(card, "reflection")
+                    card.draft_data = data
+                    card.save(update_fields=["draft_data", "updated_at"])
+                messages.success(request, "Draft saved to your diary. Submit before midnight to complete this day.")
+                if request.headers.get("Accept") == "application/json":
+                    return JsonResponse({"redirect": reverse("journal:today")})
+            except ValidationError as exc:
+                return _recording_error(request, str(exc))
         else:
             try:
                 missing = [f["label"] for f, response in zip(custom_fields, custom) if f.get("required") and response["value"] in ("", False, None)]
@@ -183,28 +202,16 @@ def journal_today(request):
                     return JsonResponse({"error": str(exc)}, status=400)
                 messages.error(request, str(exc))
     custom_values = {item.get("key"): item.get("value") for item in card.draft_data.get("custom", [])}
-    return render(request, "journal/today.html", {**policy_context(), "card": card, "emotions": emotions, "draft": card.draft_data, "custom_fields": custom_fields, "custom_values": custom_values, "storage": storage_status()})
+    return render(request, "journal/today.html", {**boundary_context(local_date), **policy_context(card.attachments.aggregate(total=Sum("size"))["total"] or 0), "card": card, "emotions": emotions, "draft": card.draft_data, "custom_fields": custom_fields, "custom_values": custom_values, "storage": storage_status()})
 
 @role_required(User.Role.PATIENT)
 def journal_history(request):
-    cards = list(Card.objects.filter(patient=request.user).exclude(status=Card.Status.QUARANTINED).annotate(
+    cards = list(Card.objects.filter(patient=request.user).annotate(
         unread_comment_count=Count("therapist_comments", filter=Q(therapist_comments__patient_read_at__isnull=True)),
-    ).prefetch_related("addenda", "therapist_comments", "attachments"))
+    ).prefetch_related("quick_notes", "addenda", "therapist_comments", "attachments"))
     catalog = {emotion.slug: emotion for emotion in Emotion.objects.all()}
-    for card in cards:
-        card.display_emotions = [{**item, "face": getattr(catalog.get(item.get("id")), "face", "◆"), "color": getattr(catalog.get(item.get("id")), "color", "#79ffe1")} for item in card.content_index.get("emotions", [])]
-        card.prominent_emotion = max(card.display_emotions, key=lambda item: int(item.get("intensity", 1)), default=None)
-    card_by_date = {card.local_date: card for card in cards}
-    today = timezone.localdate()
-    try:
-        year, month = map(int, request.GET.get("month", "").split("-"))
-        month_start = date(year, month, 1)
-    except (TypeError, ValueError): month_start = today.replace(day=1)
-    previous_day = month_start - timedelta(days=1)
-    next_month = date(month_start.year + (month_start.month == 12), 1 if month_start.month == 12 else month_start.month + 1, 1)
-    calendar_weeks = [[{"date": day, "in_month": day.month == month_start.month, "is_today": day == today, "card": card_by_date.get(day)} for day in week] for week in Calendar(firstweekday=0).monthdatescalendar(month_start.year, month_start.month)]
-    if request.GET.get("sort") == "oldest": cards.reverse()
-    return render(request, "journal/history.html", {"cards": cards, "filters": request.GET, "calendar_weeks": calendar_weeks, "month_start": month_start, "previous_month": previous_day.strftime("%Y-%m"), "next_month": next_month.strftime("%Y-%m")})
+    return render(request, "journal/history.html", archive_context(request, request.user, cards, catalog))
+
 
 @role_required(User.Role.PATIENT)
 def journal_trends(request):
@@ -308,7 +315,8 @@ def card_detail(request, card_id):
     display_emotions = [{**item, "face": getattr(catalog.get(item.get("id")), "face", "◆"), "color": getattr(catalog.get(item.get("id")), "color", "#ffffff")} for item in card.content_index.get("emotions", [])]
     rendered = _collapsible_markdown(rendered, display_emotions)
     raw_mode = request.GET.get("view") == "raw"
-    raw_documents = [{"filename": md_path.name, "content": raw}]
+    quick_notes = _quick_documents(card)
+    raw_documents = [{"filename": md_path.name, "content": raw}] + quick_notes
     if raw_mode:
         for item in card.addenda.all():
             try: content = (card_directory(card) / item.filename).read_text(encoding="utf-8")
@@ -330,7 +338,7 @@ def card_detail(request, card_id):
     image_attachments = [item for item in attachments if item.content_type.startswith("image/")]
     media_attachments = [item for item in attachments if item.content_type.startswith(("audio/", "video/"))]
     file_attachments = [item for item in attachments if not item.content_type.startswith(("image/", "audio/", "video/"))]
-    return render(request, "card_detail.html", {**policy_context(sum(item.size for item in attachments)), "media_attachments": media_attachments, "card": card, "rendered": rendered, "raw_mode": raw_mode, "raw_documents": raw_documents, "meta": meta, "addendum_form": AddendumForm(), "reviewer_status_form": ReviewerStatusForm(initial={"is_read": getattr(meta, "is_read", False)}), "comment_form": TherapistCommentForm(), "image_attachments": image_attachments, "file_attachments": file_attachments})
+    return render(request, "card_detail.html", {**policy_context(sum(item.size for item in attachments)), "media_attachments": media_attachments, "card": card, "quick_notes": quick_notes, "rendered": rendered, "raw_mode": raw_mode, "raw_documents": raw_documents, "meta": meta, "addendum_form": AddendumForm(), "reviewer_status_form": ReviewerStatusForm(initial={"is_read": getattr(meta, "is_read", False)}), "comment_form": TherapistCommentForm(), "image_attachments": image_attachments, "file_attachments": file_attachments})
 
 @role_required(User.Role.PATIENT)
 @require_POST
@@ -359,10 +367,13 @@ def card_attachment_add(request, card_id):
 @role_required(User.Role.PATIENT, User.Role.REVIEWER)
 @require_http_methods(["GET", "HEAD"])
 def attachment_download(request, card_id, attachment_id):
-    card = _card_for_user(request.user, card_id); attachment = get_object_or_404(card.attachments, id=attachment_id)
+    card = _readable_day_card(request.user, card_id); attachment = get_object_or_404(card.attachments, id=attachment_id)
     if not storage_status()["available"]: return HttpResponse("Card storage offline", status=503)
     path = card_directory(card) / attachment.stored_name
     if not path.is_file(): raise Http404
+    if card.status != Card.Status.SUBMITTED:
+        integrity = verify_card_integrity(card)
+        if integrity != "verified": return render(request, "integrity_error.html", {"card": card, "integrity": integrity}, status=409)
     inline = request.GET.get("inline") == "1" and attachment.content_type in ALLOWED_TYPES
     audit(request.user, "attachment.viewed" if inline else "attachment.downloaded", card.id, request=request)
     return attachment_response(request, path, attachment, inline)
@@ -370,27 +381,14 @@ def attachment_download(request, card_id, attachment_id):
 @role_required(User.Role.REVIEWER)
 def review_list(request):
     patient = get_reviewer_patient(request)
-    cards = list(Card.objects.filter(status=Card.Status.SUBMITTED, patient=patient).prefetch_related("reviewer_metadata", "addenda", "attachments", "therapist_comments")) if patient else []
-    catalog = {emotion.slug: emotion for emotion in Emotion.objects.all()}
-    def meta(card): return next((m for m in card.reviewer_metadata.all() if m.reviewer_id == request.user.id), None)
+    cards = list(Card.objects.filter(patient=patient).prefetch_related("quick_notes", "reviewer_metadata", "addenda", "attachments", "therapist_comments")) if patient else []
     for card in cards:
-        card.is_read = bool(meta(card) and meta(card).is_read)
-        card.display_emotions = [{**item, "face": getattr(catalog.get(item.get("id")), "face", "◆"), "color": getattr(catalog.get(item.get("id")), "color", "#79ffe1")} for item in card.content_index.get("emotions", [])]
-        card.prominent_emotion = max(card.display_emotions, key=lambda item: int(item.get("intensity", 1)), default=None)
-    unread_count = sum(not card.is_read for card in cards)
-    card_by_date = {card.local_date: card for card in cards}
-    today = timezone.localdate()
-    try:
-        year, month = map(int, request.GET.get("month", "").split("-"))
-        month_start = date(year, month, 1)
-    except (TypeError, ValueError):
-        month_start = today.replace(day=1)
-    previous_day = month_start - timedelta(days=1)
-    next_month = date(month_start.year + (month_start.month == 12), 1 if month_start.month == 12 else month_start.month + 1, 1)
-    calendar_weeks = [[{"date": day, "in_month": day.month == month_start.month, "is_today": day == today, "card": card_by_date.get(day)} for day in week] for week in Calendar(firstweekday=0).monthdatescalendar(month_start.year, month_start.month)]
-    if request.GET.get("status") == "unread": cards = [card for card in cards if not card.is_read]
-    if request.GET.get("sort") == "oldest": cards.reverse()
-    return render(request, "review/list.html", {"cards": cards, "unread_count": unread_count, "filters": request.GET, "calendar_weeks": calendar_weeks, "month_start": month_start, "previous_month": previous_day.strftime("%Y-%m"), "next_month": next_month.strftime("%Y-%m")})
+        meta = next((m for m in card.reviewer_metadata.all() if m.reviewer_id == request.user.id), None)
+        card.is_read = bool(meta and meta.is_read)
+    unread_count = sum(card.status == Card.Status.SUBMITTED and not card.is_read for card in cards)
+    catalog = {emotion.slug: emotion for emotion in Emotion.objects.all()}
+    return render(request, "review/list.html", {**archive_context(request, patient, cards, catalog, reviewer=True), "unread_count": unread_count})
+
 
 @role_required(User.Role.REVIEWER)
 @require_POST
@@ -507,8 +505,18 @@ def control_dashboard(request, limits_form=None, response_status=200):
     form_def = FormDefinition.objects.filter(active=True).first()
     custom_fields, active_fields, _ = _form_builder_state(request)
     storage = storage_status()
-    cards = list(Card.objects.only("id", "local_date", "status", "folder_name", "quarantined_at", "purge_after").prefetch_related("attachments", "addenda"))
-    maintenance_cards = [{"card": card, "integrity": verify_card_integrity(card, storage) if card.status != Card.Status.DRAFT else "draft", **card_file_inventory(card, storage)} for card in cards]
+    cards = Card.objects.only("id", "local_date", "status", "folder_name", "quarantined_at", "purge_after", "checksum", "comments_checksum")
+    verify_id = request.GET.get("verify", "")
+    maintenance_cards = []
+    for card in cards.iterator(chunk_size=200):
+        integrity = "draft" if card.status == Card.Status.DRAFT else "unchecked"
+        if card.status != Card.Status.DRAFT or card.folder_name:
+            integrity = "unchecked"
+            if not storage["available"]:
+                integrity = "offline"
+            elif str(card.id) == verify_id:
+                integrity = verify_card_integrity(card, storage)
+        maintenance_cards.append({"card": card, "integrity": integrity, **card_file_inventory(card, storage)})
     stored_file_count = sum(item["file_count"] for item in maintenance_cards)
     stored_file_bytes = sum(item["total_size"] for item in maintenance_cards)
     journal_capacity = stored_file_bytes + storage.get("free_bytes", 0) if storage["available"] else 0
@@ -533,7 +541,7 @@ def control_dashboard(request, limits_form=None, response_status=200):
     events = list(AuditEvent.objects.select_related("actor")[:100])
     emotions = list(Emotion.objects.order_by("sort_order"))
     feedback_reports = list(FeedbackReport.objects.select_related("author", "archived_by"))
-    return render(request, "control/dashboard.html", {**policy_context(), "attachment_limits_form": limits_form if limits_form is not None else AttachmentLimitsForm(instance=AttachmentSettings.current()), "journalmax_version": settings.JOURNALMAX_VERSION, "storage": storage, "journal_storage": {"bytes": stored_file_bytes, "capacity": journal_capacity, "percent": journal_storage_percent, "volume_percent": journal_volume_percent}, "counts": {"users": User.objects.count(), "cards": Card.objects.count(), "submitted": Card.objects.filter(status=Card.Status.SUBMITTED).count(), "files": stored_file_count}, "maintenance_cards": maintenance_cards, "events": events, "recent_activity": _recent_activity(events[:12]), "users": users, "patient_accounts": patient_accounts, "emotions": emotions, "custom_fields": custom_fields, "form_version": getattr(form_def, "version", None), "has_staged_changes": custom_fields != active_fields, "feedback_reports": feedback_reports, "active_feedback_count": sum(report.archived_at is None for report in feedback_reports)}, status=response_status)
+    return render(request, "control/dashboard.html", {"recording_opening": opening_time(), "recording_next_opening": opening_time(timezone.localdate() + timedelta(days=1)), "recording_timezone": timezone.get_current_timezone_name(), **policy_context(), "attachment_limits_form": limits_form if limits_form is not None else AttachmentLimitsForm(instance=AttachmentSettings.current()), "journalmax_version": settings.JOURNALMAX_VERSION, "storage": storage, "journal_storage": {"bytes": stored_file_bytes, "capacity": journal_capacity, "percent": journal_storage_percent, "volume_percent": journal_volume_percent}, "counts": {"users": User.objects.count(), "cards": Card.objects.count(), "submitted": Card.objects.filter(status=Card.Status.SUBMITTED).count(), "files": stored_file_count}, "maintenance_cards": maintenance_cards, "events": events, "recent_activity": _recent_activity(events[:12]), "users": users, "patient_accounts": patient_accounts, "emotions": emotions, "custom_fields": custom_fields, "form_version": getattr(form_def, "version", None), "has_staged_changes": custom_fields != active_fields, "feedback_reports": feedback_reports, "active_feedback_count": sum(report.archived_at is None for report in feedback_reports)}, status=response_status)
 
 @role_required(User.Role.ADMIN)
 @require_POST
@@ -919,4 +927,122 @@ def control_attachment_limits(request):
     form.save()
     audit(request.user, "attachment_limits.updated", "global", {"old": old, "new": form.cleaned_data}, request)
     messages.success(request, "Attachment limits updated. Existing attachments are unchanged.")
+    return redirect(reverse("control:dashboard") + "#maintenance")
+
+
+def _recording_error(request, message):
+    if request.headers.get("Accept") == "application/json":
+        return JsonResponse({"error": message}, status=409)
+    return render(request, "journal/recording_error.html", {"error": message, "preserved": request.POST}, status=409)
+
+
+def _quick_documents(card):
+    documents = []
+    for item in card.quick_notes.exclude(filename=""):
+        content = (card_directory(card) / item.filename).read_text(encoding="utf-8")
+        body = content.split("---", 2)[-1].removeprefix("\n\n# Quick note\n\n")
+        documents.append({"filename": item.filename, "content": content, "body": body,
+                          "created_at": item.created_at, "label": "EARLY NOTE"})
+    return documents
+
+
+def _saved_attachment_context(card):
+    files = list(card.attachments.all()) if card else []
+    return {"image_attachments": [f for f in files if f.content_type.startswith("image/")],
+            "media_attachments": [f for f in files if f.content_type.startswith(("audio/", "video/"))],
+            "file_attachments": [f for f in files if not f.content_type.startswith(("image/", "audio/", "video/"))]}
+
+
+def _early_page(request, card, status=200, error=None):
+    if phase(card.local_date) != "early":
+        return _recording_error(request, error or "The early recording window has closed.")
+    integrity = verify_card_integrity(card) if card.folder_name else "verified"
+    notes = _quick_documents(card) if integrity == "verified" else []
+    used = card.attachments.aggregate(total=Sum("size"))["total"] or 0
+    return render(request, "journal/early.html", {**(_saved_attachment_context(card) if integrity == "verified" else {}), **policy_context(used), **boundary_context(card.local_date),
+                  "card": card, "quick_notes": notes, "storage": storage_status(), "integrity": integrity,
+                  "operation_id": request.POST.get("operation_id") or str(uuid.uuid4()),
+                  "body": request.POST.get("body", ""), "error": error}, status=status)
+
+
+@role_required(User.Role.PATIENT)
+@require_POST
+def journal_early_save(request):
+    day = timezone.localdate()
+    if request.POST.get("recording_date") != day.isoformat():
+        return _recording_error(request, "This note belongs to a previous day. It was not saved. Open Today for the new day.")
+    card = get_object_or_404(Card, patient=request.user, local_date=day)
+    try:
+        save_quick_note(card, request.POST.get("body", ""), request.FILES.getlist("attachments"), request.user, request.POST.get("operation_id"), request)
+    except ValidationError as exc:
+        if request.headers.get("Accept") == "application/json": return JsonResponse({"error": str(exc)}, status=409)
+        return _early_page(request, card, status=409, error=str(exc))
+    except OSError:
+        return _recording_error(request, "Storage could not save this entry. Your input has not been cleared; try again when storage is available.")
+    if request.headers.get("Accept") == "application/json": return JsonResponse({"redirect": reverse("journal:today")})
+    messages.success(request, "Early entry saved.")
+    return redirect("journal:today")
+
+
+def _readable_day_card(user, card_id):
+    card = get_object_or_404(Card, id=card_id)
+    if card.status == Card.Status.QUARANTINED: raise Http404
+    if user.role == User.Role.PATIENT:
+        if card.patient_id != user.id: raise Http404
+        if card.status != Card.Status.SUBMITTED and card.local_date == timezone.localdate() and phase(card.local_date) != "early": raise Http404
+    elif user.role == User.Role.REVIEWER:
+        if not CareRelationship.objects.filter(therapist=user, patient_id=card.patient_id).exists(): raise Http404
+        if card.status != Card.Status.SUBMITTED and card.local_date >= timezone.localdate(): raise Http404
+    else: raise Http404
+    if card.local_date > timezone.localdate(): raise Http404
+    return card
+
+
+@role_required(User.Role.PATIENT, User.Role.REVIEWER)
+def archive_day(request, day, patient_id=None):
+    if request.user.role == User.Role.PATIENT:
+        if patient_id is not None: raise Http404
+        patient = request.user
+    else:
+        patient = get_object_or_404(User, id=patient_id, role=User.Role.PATIENT, therapist_assignments__therapist=request.user)
+    try: day = date.fromisoformat(day)
+    except ValueError: raise Http404
+    card = Card.objects.filter(patient=patient, local_date=day).first()
+    if day > timezone.localdate() or (day < timezone.localtime(patient.date_joined).date() and not card): raise Http404
+    if card and card.status == Card.Status.QUARANTINED: raise Http404
+    if card and card.status == Card.Status.SUBMITTED:
+        return redirect("review:detail" if request.user.role == User.Role.REVIEWER else "journal:detail", card_id=card.id)
+    if day == timezone.localdate():
+        if request.user.role == User.Role.PATIENT: return redirect("journal:today")
+        return render(request, "journal/day.html", {"day": day, "archive_state": "in progress"})
+    state = archive_state(card, day)
+    notes = []
+    if card and card.folder_name:
+        integrity = verify_card_integrity(card)
+        if integrity != "verified":
+            return render(request, "integrity_error.html", {"card": card, "integrity": integrity}, status=503 if integrity == "offline" else 409)
+        notes = _quick_documents(card)
+    return render(request, "journal/day.html", {**_saved_attachment_context(card), "day": day, "card": card, "archive_state": state, "quick_notes": notes})
+
+
+@role_required(User.Role.ADMIN)
+@require_POST
+def control_recording_schedule(request):
+    apply_when = request.POST.get("apply_when", "tomorrow")
+    try:
+        opens_at = datetime.strptime(request.POST.get("opens_at", ""), "%H:%M").time()
+        if apply_when not in ("now", "tomorrow"):
+            raise ValueError()
+    except ValueError:
+        messages.error(request, "Enter a valid opening time and choose when to apply it.")
+    else:
+        today = timezone.localdate()
+        tomorrow = today + timedelta(days=1)
+        effective_date = today if apply_when == "now" else tomorrow
+        with transaction.atomic():
+            RecordingSchedule.objects.update_or_create(effective_date=effective_date, defaults={"opens_at": opens_at})
+            if apply_when == "now":
+                RecordingSchedule.objects.filter(effective_date=tomorrow).update(opens_at=opens_at)
+            audit(request.user, "recording.schedule_changed", metadata={"effective_date": effective_date.isoformat(), "opens_at": opens_at.isoformat(), "apply_when": apply_when}, request=request)
+        messages.success(request, "Recording time applied now. Refresh the patient page to use the new window." if apply_when == "now" else "Recording time saved. It takes effect tomorrow.")
     return redirect(reverse("control:dashboard") + "#maintenance")

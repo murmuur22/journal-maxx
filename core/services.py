@@ -4,13 +4,16 @@ import os
 import re
 import shutil
 import tempfile
+import uuid
 from datetime import timedelta
 from pathlib import Path
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
-from .models import Addendum, Attachment, AuditEvent, Card, TherapistComment, User
+from .models import Addendum, Attachment, AuditEvent, Card, QuickNote, TherapistComment, User
+
+from .recording import require_phase
 
 from .attachment_uploads import ALLOWED_TYPES, prepare_uploads, atomic_write_upload, file_checksum
 
@@ -149,6 +152,8 @@ def card_file_inventory(card, volume_status=None):
     """Return directory metadata without opening or reading any card file."""
     if not (volume_status or storage_status())["available"]:
         return {"available": False, "files": [], "file_count": 0, "total_size": 0}
+    if not card.folder_name:
+        return {"available": True, "files": [], "file_count": 0, "total_size": 0}
     folder = card_storage_directory(card)
     files = []
     try:
@@ -171,7 +176,11 @@ def verify_card_integrity(card, volume_status=None):
     folder = card_storage_directory(card)
     markdown_path = folder / f"{card.local_date:%y%m%d}_diary.md"
     try:
-        if sha256_bytes(markdown_path.read_bytes()) != card.checksum: return "conflict"
+        if (card.status == Card.Status.SUBMITTED or card.previous_status == Card.Status.SUBMITTED) and not card.checksum: return "conflict"
+        if card.checksum and file_checksum(markdown_path) != card.checksum: return "conflict"
+        for item in card.quick_notes.exclude(filename=""):
+            path = folder / item.filename
+            if not path.is_file() or file_checksum(path) != item.checksum: return "conflict"
         for item in card.attachments.all():
             path = folder / item.stored_name
             if not path.is_file() or file_checksum(path) != item.checksum: return "conflict"
@@ -180,7 +189,7 @@ def verify_card_integrity(card, volume_status=None):
             if not path.is_file() or file_checksum(path) != item.checksum: return "conflict"
         if card.therapist_comments.exists():
             path = folder / comments_filename(card)
-            if not card.comments_checksum or not path.is_file() or sha256_bytes(path.read_bytes()) != card.comments_checksum: return "conflict"
+            if not card.comments_checksum or not path.is_file() or file_checksum(path) != card.comments_checksum: return "conflict"
         return "verified"
     except OSError: return "missing"
 
@@ -212,73 +221,137 @@ def atomic_write(path, data):
     finally:
         if os.path.exists(temporary): os.unlink(temporary)
 
+def _locked_card(card):
+    # Acquire the SQLite write reservation before reading state or writing files.
+    # select_for_update alone has no effect on SQLite.
+    Card.objects.filter(pk=card.pk).update(updated_at=timezone.now())
+    return Card.objects.select_for_update().get(pk=card.pk)
+
+
+def _ensure_card_folder(card):
+    if not card.folder_name:
+        card.folder_name = f"{card.local_date:%y%m%d}_diary-card_{str(card.id)[:8]}"
+        card.save(update_fields=["folder_name"])
+    folder = card_directory(card)
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _write_attachments(card, prepared, written, quick_note=None):
+    folder = card_directory(card)
+    prefix = card.local_date.strftime("%y%m%d")
+    for upload, kind in prepared:
+        clean = safe_name(upload.name)
+        stem, suffix = Path(clean).stem, Path(clean).suffix.lower()
+        candidate, counter = f"{prefix}_{stem}{suffix}", 2
+        while (folder / candidate).exists():
+            candidate = f"{prefix}_{stem}_{counter}{suffix}"; counter += 1
+        path = folder / candidate
+        size, checksum = atomic_write_upload(path, upload)
+        written.append(path)
+        Attachment.objects.create(card=card, quick_note=quick_note, stored_name=candidate,
+                                  original_name=clean, content_type=kind, size=size, checksum=checksum)
+
+
+def _remove_written(written):
+    for path in written:
+        path.unlink(missing_ok=True)
+
+
+@transaction.atomic
+def save_quick_note(card, body, uploads, actor, operation_id, request=None):
+    card = _locked_card(card)
+    if actor.pk != card.patient_id: raise ValidationError("This is not your diary.")
+    try: operation_id = uuid.UUID(str(operation_id))
+    except (ValueError, TypeError, AttributeError): raise ValidationError("Invalid save identifier. Reload Today before trying again.")
+    existing = QuickNote.objects.filter(id=operation_id).first()
+    if existing:
+        if existing.card_id != card.pk: raise ValidationError("Invalid save identifier.")
+        return existing
+    require_phase(card, "early")
+    body, uploads = body.strip(), list(uploads)
+    if not body and not uploads: raise ValidationError("Write a quick note or choose an attachment.")
+    if len(body) > 50000: raise ValidationError("Keep each quick note under 50,000 characters.")
+    require_card_storage()
+    used = card.attachments.aggregate(total=models.Sum("size"))["total"] or 0
+    prepared = prepare_uploads(uploads, used, valid_signature)
+    folder = _ensure_card_folder(card)
+    written = []
+    try:
+        now = timezone.now()
+        item = QuickNote(id=operation_id, card=card, created_at=now)
+        if body:
+            item.filename = f"{card.local_date:%y%m%d}_quick_{now:%Y%m%dT%H%M%S}_{operation_id.hex}.md"
+            payload = (f"---\ncard_id: {json.dumps(str(card.id))}\ncreated_at: {json.dumps(now.isoformat())}\n---\n\n# Quick note\n\n{body}\n").encode()
+            path = folder / item.filename
+            atomic_write(path, payload); written.append(path)
+            item.checksum = sha256_bytes(payload)
+        item.save(force_insert=True)
+        _write_attachments(card, prepared, written, item)
+        require_phase(card, "early")
+        audit(actor, "card.quick_note_created", card.id, {"attachment_count": len(prepared)}, request)
+    except Exception:
+        _remove_written(written)
+        raise
+    return item
+
+
 @transaction.atomic
 def submit_card(card, data, uploads, actor, request=None):
-    if card.status != Card.Status.DRAFT: raise ValidationError("Only drafts can be submitted.")
+    original = card
+    card = _locked_card(card)
+    require_phase(card, "reflection")
+    if actor.pk != card.patient_id: raise ValidationError("This is not your diary.")
     if not data.get("emotions"): raise ValidationError("Choose at least one significant emotion.")
     require_card_storage()
-    prepared = prepare_uploads(list(uploads), 0, valid_signature)
+    existing_size = card.attachments.aggregate(total=models.Sum("size"))["total"] or 0
+    prepared = prepare_uploads(list(uploads), existing_size, valid_signature)
     for emotion in data["emotions"]:
         try: emotion["intensity"] = max(1, min(5, int(emotion.get("intensity") or 3)))
         except (TypeError, ValueError): emotion["intensity"] = 3
-    prefix = card.local_date.strftime("%y%m%d")
-    card.folder_name = f"{prefix}_diary-card_{str(card.id)[:8]}"
-    folder = card_directory(card)
-    if folder.exists(): raise ValidationError("The card folder already exists.")
-    folder.mkdir(parents=True)
+    if card.folder_name and verify_card_integrity(card) != "verified":
+        raise ValidationError("Saved early files could not be verified. Submission stopped.")
+    folder = _ensure_card_folder(card)
+    markdown_path = folder / f"{card.local_date:%y%m%d}_diary.md"
+    if markdown_path.exists(): raise ValidationError("The diary file already exists; submission stopped.")
+    written = []
     try:
-        markdown = render_markdown(card, data).encode("utf-8")
-        markdown_name = f"{prefix}_diary.md"
-        atomic_write(folder / markdown_name, markdown)
-        for upload, kind in prepared:
-            clean = safe_name(upload.name)
-            stem, suffix = Path(clean).stem, Path(clean).suffix.lower()
-            candidate, counter = f"{prefix}_{stem}{suffix}", 2
-            while (folder / candidate).exists():
-                candidate = f"{prefix}_{stem}_{counter}{suffix}"; counter += 1
-            size, checksum = atomic_write_upload(folder / candidate, upload)
-            Attachment.objects.create(card=card, stored_name=candidate, original_name=clean, content_type=kind, size=size, checksum=checksum)
+        payload = render_markdown(card, data).encode("utf-8")
+        atomic_write(markdown_path, payload); written.append(markdown_path)
+        _write_attachments(card, prepared, written)
+        require_phase(card, "reflection")
         card.status = Card.Status.SUBMITTED
         card.content_index = data
         card.draft_data = {}
         card.submitted_at = timezone.now()
-        card.checksum = sha256_bytes(markdown)
+        card.checksum = sha256_bytes(payload)
         card.save()
         audit(actor, "card.submitted", card.id, request=request)
     except Exception:
-        shutil.rmtree(folder, ignore_errors=True)
+        _remove_written(written)
         raise
+    original.__dict__.update(card.__dict__)
     return card
+
 
 @transaction.atomic
 def add_card_attachments(card, uploads, actor, request=None):
-    card = Card.objects.select_for_update().get(pk=card.pk)
+    card = _locked_card(card)
     if card.status != Card.Status.SUBMITTED: raise ValidationError("Attachments require a submitted card.")
     require_card_storage()
     uploads = list(uploads)
     if not uploads: raise ValidationError("Choose at least one attachment.")
-    existing_size = card.attachments.aggregate(total=models.Sum("size"))["total"] or 0
-    prepared = prepare_uploads(uploads, existing_size, valid_signature)
-    folder = card_directory(card)
-    prefix = card.local_date.strftime("%y%m%d")
+    used = card.attachments.aggregate(total=models.Sum("size"))["total"] or 0
+    prepared = prepare_uploads(uploads, used, valid_signature)
     written = []
     try:
-        for upload, kind in prepared:
-            clean = safe_name(upload.name)
-            stem, suffix = Path(clean).stem, Path(clean).suffix.lower()
-            candidate, counter = f"{prefix}_{stem}{suffix}", 2
-            while (folder / candidate).exists():
-                candidate = f"{prefix}_{stem}_{counter}{suffix}"; counter += 1
-            path = folder / candidate
-            size, checksum = atomic_write_upload(path, upload); written.append(path)
-            Attachment.objects.create(card=card, stored_name=candidate, original_name=clean, content_type=kind, size=size, checksum=checksum)
+        _write_attachments(card, prepared, written)
         audit(actor, "card.attachments_added", card.id, {"count": len(prepared)}, request)
     except Exception:
-        for path in written:
-            try: path.unlink(missing_ok=True)
-            except OSError: pass
+        _remove_written(written)
         raise
     return card
+
 
 @transaction.atomic
 def add_addendum(card, body, actor, request=None):
@@ -321,15 +394,17 @@ def add_therapist_comment(card, body, actor, request=None):
 def quarantine_card(card, actor, request=None):
     if card.status == Card.Status.QUARANTINED: return
     require_card_storage()
+    if not card.folder_name: raise ValidationError("This day has no saved files to quarantine.")
     source = card_directory(card)
     target = settings.CARD_ROOT / ".quarantine" / card.folder_name
     target.parent.mkdir(parents=True, exist_ok=True)
     if not source.exists(): raise ValidationError("Card files are missing; deletion stopped.")
     os.replace(source, target)
+    card.previous_status = card.status
     card.status = Card.Status.QUARANTINED
     card.quarantined_at = timezone.now()
     card.purge_after = timezone.now() + timedelta(days=7)
-    card.save(update_fields=["status", "quarantined_at", "purge_after", "updated_at"])
+    card.save(update_fields=["status", "previous_status", "quarantined_at", "purge_after", "updated_at"])
     audit(actor, "card.quarantined", card.id, request=request)
 
 def restore_card(card, actor, request=None):
@@ -338,7 +413,7 @@ def restore_card(card, actor, request=None):
     target = settings.CARD_ROOT / str(card.local_date.year) / card.folder_name
     target.parent.mkdir(parents=True, exist_ok=True)
     os.replace(source, target)
-    card.status = Card.Status.SUBMITTED; card.quarantined_at = None; card.purge_after = None
+    card.status = card.previous_status or (Card.Status.SUBMITTED if card.checksum else Card.Status.DRAFT); card.quarantined_at = None; card.purge_after = None
     card.save(update_fields=["status", "quarantined_at", "purge_after", "updated_at"])
     audit(actor, "card.restored", card.id, request=request)
 

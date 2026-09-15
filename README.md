@@ -29,3 +29,35 @@ Create a read-only token with `python manage.py create_api_token USERNAME`. Supp
 ## Security boundary
 
 This software is not a certification of HIPAA compliance and is not an emergency or continuously monitored service. The operator remains responsible for reverse-proxy TLS, network policy, encrypted storage, backups, host patching, access review, incident response, and determining any legal or professional obligations.
+
+## Daily recording
+
+The patient page accepts quick notes and attachments before **7 pm**, then opens
+the existing emotions/reflection form until **midnight**. These times use
+`DIARY_TIME_ZONE` (UTC by default). Administrators can change the shared opening
+time in **Maintenance → Evening reflection**. **Save for tomorrow** schedules a
+next-day change; **Apply now** changes today’s window immediately and replaces
+any change scheduled for tomorrow. Refresh the patient page after applying.
+
+Earlier notes and uploads are hidden during the full form and return after
+**Lock + Submit**. Submitted cards still accept addenda and attachments. Each
+text quick note is saved as a separate timestamped Markdown file. The total
+attachment allowance includes early uploads.
+
+Patient and assigned-therapist archives include every day since the patient
+joined: **Complete** for submitted cards, **Incomplete** for saved notes, files,
+or unfinished form drafts, and **Missing** when nothing was saved. Today remains
+**In progress** until submission or midnight. At midnight, unsubmitted days close
+permanently and their saved content becomes readable by assigned therapists.
+Save Draft stores responses in the server database; unsaved browser text is not
+an archived entry. Existing imported cards remain accessible.
+
+Apply database migrations before starting an updated preview:
+
+```bash
+PYTHONPATH=.deps python3 manage.py migrate
+PYTHONPATH=.deps DIARY_DEBUG=1 python3 manage.py runserver 127.0.0.1:8000 --noreload
+```
+
+Validate recording and existing behavior with `PYTHONPATH=.deps python3 manage.py
+test` and browser-state handling with `node --test tests/recording.test.cjs`.

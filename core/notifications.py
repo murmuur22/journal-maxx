@@ -10,7 +10,7 @@ def unread_notifications(user):
     comments = TherapistComment.objects.filter(
         card__patient=user, card__status=Card.Status.SUBMITTED,
         patient_read_at__isnull=True,
-    ).select_related("card").order_by("-created_at", "-id")
+    ).select_related("card").only("id", "author_name", "created_at", "card__id", "card__local_date").order_by("-created_at", "-id")
     # Future system notifications can provide the same kind/title/detail/url/time fields.
     return [{
         "kind": "therapist_comment",
@@ -18,4 +18,4 @@ def unread_notifications(user):
         "detail": f"Diary card · {comment.card.local_date:%a, %d %b %Y}",
         "url": reverse("journal:detail", args=[comment.card_id]) + f"#comment-{comment.pk}",
         "created_at": comment.created_at,
-    } for comment in comments]
+    } for comment in comments.iterator(chunk_size=200)]

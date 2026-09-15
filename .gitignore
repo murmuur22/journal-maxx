@@ -8,3 +8,4 @@ __pycache__/
 .venv/
 .deps/
 staticfiles/
+/docs/local-preview.md
